@@ -2,40 +2,11 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#1e3a34">
+  <meta http-equiv="refresh" content="0; url=../">
   <title>Личный финансовый кабинет</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css">
-  <link rel="stylesheet" href="styles-overrides.css">
+  <script>location.replace("../");</script>
 </head>
 <body>
-  <div class="app-shell">
-    <aside class="sidebar">
-      <div class="brand"><span class="brand-mark">₽</span><span>Финансы<br><small>личный кабинет</small></span></div>
-      <nav id="main-nav" aria-label="Основная навигация">
-        <button class="nav-item active" data-view="dashboard"><span>⌂</span> Главная</button>
-        <button class="nav-item" data-view="deposits"><span>▣</span> Вклады <b class="nav-count" id="deposit-count">0</b></button>
-        <button class="nav-item" data-view="accounts"><span>▤</span> Карты и счета</button>
-        <button class="nav-item" data-view="assets"><span>⌂</span> Имущество</button>
-        <button class="nav-item" data-view="debts"><span>◴</span> Обязательства <b class="nav-count" id="debt-count">0</b></button>
-        <button class="nav-item" data-view="calendar"><span>▦</span> Календарь</button>
-        <button class="nav-item" data-view="income"><span>↗</span> Аналитика</button>
-        <button class="nav-item" data-view="forecast"><span>◌</span> Прогноз</button>
-        <button class="nav-item" data-view="history"><span>⌁</span> История капитала</button>
-      </nav>
-      <div class="sidebar-bottom"><button class="nav-item" data-view="settings"><span>⚙</span> Настройки</button><div class="privacy-note">Данные хранятся только<br>в этом браузере</div></div>
-    </aside>
-    <main class="main-content">
-      <header class="topbar"><div><p class="eyebrow" id="page-eyebrow">ФИНАНСОВЫЙ КАБИНЕТ</p><h1 id="page-title">Добрый день</h1></div><div class="top-actions"><span class="today" id="today-label"></span><button class="icon-button" data-view="settings" title="Настройки">⚙</button><button class="avatar">А</button></div></header>
-      <section id="app-view"></section>
-    </main>
-  </div>
-  <div id="modal-root"></div>
-  <script src="app.js"></script>
-  <script src="compact-obligations.js"></script>
-  <script src="rental-enhancements.js"></script>
+  <p><a href="../">Открыть кабинет</a></p>
 </body>
 </html>
