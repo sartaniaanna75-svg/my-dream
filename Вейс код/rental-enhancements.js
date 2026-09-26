@@ -20,7 +20,6 @@
     if (asset.rent.planned === undefined) asset.rent.planned = false;
     if (!asset.rent.periodicity) asset.rent.periodicity = 'Месяц';
     if (!asset.rent.currency) asset.rent.currency = asset.currency || 'RUB';
-    ensureRentalPayments(asset);
     return asset;
   }
 
@@ -52,7 +51,7 @@
       type: get('type') || 'Другое', owner: get('owner') || '', currency: get('currency') || 'RUB', acquisition: get('acquisition') || get('purchase') || '', usageStatus: get('usageStatus') || 'Оплачиваю', initialRate: num(get('initialRate')), currentRate: num(get('currentRate')), rateMode: get('rateMode') || 'Ручной',
       photos: photos, plannedRent: checked('plannedRent'), rent: {
         planned: checked('plannedRent'), amount: num(get('rentAmount')), currency: get('rentCurrency') || get('currency') || 'RUB', periodicity: get('rentPeriodicity') || 'Месяц', startDate: get('rentStartDate') || '', comment: get('rentComment') || '',
-        tenant: get('tenant') || '', nextDate: get('rentNextDate') || '', contractStart: get('contractStart') || '', contractEnd: get('contractEnd') || '', deposit: num(get('rentDeposit')), indexation: num(get('rentIndexation')), payments: []
+        tenant: get('tenant') || '', nextDate: get('rentNextDate') || '', contractStart: get('contractStart') || '', contractEnd: get('contractEnd') || '', deposit: num(get('rentDeposit')), indexation: num(get('rentIndexation'))
       }
     };
   }
@@ -77,7 +76,15 @@
     const hiddenPhotos = extras.querySelector('[name="photos"]');
     const updatePhotos = function () { hiddenPhotos.value = JSON.stringify(Array.from(extras.querySelectorAll('.asset-photo-thumb img')).map(function (img) { return img.src; })); };
     photoInput.addEventListener('change', function () {
-      Array.from(photoInput.files).forEach(function (file) { const reader = new FileReader(); reader.onload = function () { const thumb = document.createElement('div'); thumb.className = 'asset-photo-thumb'; thumb.innerHTML = '<img src="' + reader.result + '"><button type="button">Сделать главной</button><button type="button">Удалить</button>'; extras.querySelector('.asset-photo-list').appendChild(thumb); updatePhotos(); }; reader.readAsDataURL(file); });
+      Array.from(photoInput.files).forEach(function (file) {
+        const reader = new FileReader();
+        reader.onload = function () {
+          const place = function (src) { const thumb = document.createElement('div'); thumb.className = 'asset-photo-thumb'; thumb.innerHTML = '<img src="' + src + '"><button type="button">Сделать главной</button><button type="button">Удалить</button>'; extras.querySelector('.asset-photo-list').appendChild(thumb); updatePhotos(); };
+          if (typeof compressImageUrl === 'function') compressImageUrl(reader.result).then(place);
+          else place(reader.result);
+        };
+        reader.readAsDataURL(file);
+      });
     });
     extras.addEventListener('click', function (event) { if (event.target.dataset.removePhoto !== undefined) { event.target.closest('.asset-photo-thumb').remove(); updatePhotos(); } if (event.target.dataset.photoIndex !== undefined) { const list = extras.querySelector('.asset-photo-list'); const selected = list.children[Number(event.target.dataset.photoIndex)]; if (selected) list.prepend(selected); updatePhotos(); } });
     extras.addEventListener('click', function (event) { const thumb = event.target.closest('.asset-photo-thumb'); if (!thumb) return; if (event.target.textContent.indexOf('Сделать главной') >= 0) { extras.querySelector('.asset-photo-list').prepend(thumb); updatePhotos(); } if (event.target.textContent === 'Удалить') { thumb.remove(); updatePhotos(); } });
@@ -87,7 +94,8 @@
     extras.querySelector('[name="usageStatus"]').dispatchEvent(new Event('change'));
     const submit = form.onsubmit;
     form.onsubmit = function (event) {
-      const before = state.assets.length;
+      const existing = id ? state.assets.find(function (item) { return item.id === id; }) : null;
+      const keptPayments = existing && existing.rent && Array.isArray(existing.rent.payments) ? existing.rent.payments.map(function (payment) { return Object.assign({}, payment); }) : [];
       const result = submit(event);
       const name = form.elements.name && form.elements.name.value;
       const saved = state.assets.slice().reverse().find(function (item) { return item.name === name; });
@@ -98,7 +106,7 @@
         if (!saved.rateHistory.length || saved.rateHistory[saved.rateHistory.length - 1].rate !== saved.currentRate) saved.rateHistory.push({ date: isoDate(today), rate: saved.currentRate, rubValue: num(saved.value) * saved.currentRate / (saved.initialRate || 1) });
         if (!Array.isArray(saved.statusHistory)) saved.statusHistory = [];
         if (!saved.statusHistory.length || saved.statusHistory[saved.statusHistory.length - 1].value !== saved.usageStatus) saved.statusHistory.push({ date: isoDate(today), value: saved.usageStatus });
-        saved.rent = Object.assign(saved.rent || {}, extrasData.rent, { planned: extrasData.plannedRent || saved.usageStatus === 'Сдаётся в аренду' });
+        saved.rent = Object.assign({}, existing && existing.rent ? existing.rent : {}, extrasData.rent, { planned: extrasData.plannedRent || saved.usageStatus === 'Сдаётся в аренду', payments: keptPayments });
         ensureRentalPayments(saved); save(); render();
       }
       return result;
@@ -148,10 +156,26 @@
   }
   assets = enhancedAssets;
 
+  function monthlyRent(asset) {
+    const rent = asset.rent || {};
+    const amount = num(rent.amount);
+    if (rent.periodicity === 'Квартал') return amount / 3;
+    if (rent.periodicity === 'Год') return amount / 12;
+    if (rent.periodicity === 'Месяц') return amount;
+    return null;
+  }
   const baseIncome = income;
   income = function () {
-    const panel = state.assets.filter(function (asset) { return asset.rent && asset.rent.planned; }).map(function (asset) { const received = (asset.rent.payments || []).filter(function (payment) { return payment.status === 'Получено'; }).reduce(function (sum, payment) { return sum + num(payment.amount); }, 0); const value = num(asset.value) * num(asset.currentRate || asset.initialRate || 1) / (num(asset.initialRate) || 1); return '<tr><td>' + asset.name + '</td><td>' + (asset.usageStatus || '—') + '</td><td>' + rub(received) + '</td><td>' + rub(received * 12) + '</td><td>' + rub(received / 12) + '</td><td>' + (value ? (received * 12 / value * 100).toFixed(2).replace('.', ',') + '%' : '—') + '</td></tr>'; }).join('');
-    return baseIncome() + '<div class="panel property-analytics"><div class="panel-head"><div><p class="eyebrow">ИМУЩЕСТВО</p><h3>Доходность объектов</h3></div></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Объект</th><th>Статус</th><th>Аренда получена</th><th>За год</th><th>Среднее / месяц</th><th>Фактическая доходность</th></tr></thead><tbody>' + (panel || '<tr><td colspan="6"><div class="empty">Доходных объектов пока нет</div></td></tr>') + '</tbody></table></div></div>';
+    const panel = state.assets.filter(function (asset) { return asset.rent && asset.rent.planned; }).map(function (asset) {
+      const received = (asset.rent.payments || []).filter(function (payment) { return payment.status === 'Получено'; }).reduce(function (sum, payment) { return sum + num(payment.amount); }, 0);
+      const monthly = monthlyRent(asset);
+      const yearly = monthly == null ? null : monthly * 12;
+      const value = num(asset.value) * num(asset.currentRate || asset.initialRate || 1) / (num(asset.initialRate) || 1);
+      const yieldPct = yearly != null && value ? yearly / value * 100 : null;
+      const shown = function (amount) { return amount == null ? '—' : rub(amount); };
+      return '<tr><td>' + asset.name + '</td><td>' + (asset.usageStatus || '—') + '</td><td>' + rub(received) + '</td><td>' + shown(monthly) + '</td><td>' + shown(yearly) + '</td><td>' + (yieldPct == null ? '—' : yieldPct.toFixed(2).replace('.', ',') + '%') + '</td></tr>';
+    }).join('');
+    return baseIncome() + '<div class="panel property-analytics"><div class="panel-head"><div><p class="eyebrow">ИМУЩЕСТВО</p><h3>Доходность объектов</h3></div></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Объект</th><th>Статус</th><th>Аренда получена</th><th>В месяц</th><th>За год</th><th>Доходность</th></tr></thead><tbody>' + (panel || '<tr><td colspan="6"><div class="empty">Доходных объектов пока нет</div></td></tr>') + '</tbody></table></div></div>';
   };
   const baseHistory = history;
   history = function () {
