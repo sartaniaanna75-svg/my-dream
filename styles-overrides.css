@@ -46,5 +46,28 @@
 .paid-rub-field{grid-column:1/-1}
 .paid-rub-field small{display:block;color:#9eb4dc;font-size:11px;margin-top:6px}
 .payment-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-.payment-rub{flex:1 1 150px}
+.payment-plan{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:12px;margin-top:10px;border:1px solid #2b5aa8;border-radius:12px;background:#0c2d72}
+.payment-plan label,.payment-series label{display:flex;flex-direction:column;gap:4px;color:#c5d7f5;font-size:11px;font-weight:700}
+.payment-fact{display:contents}
+.payment-fact[hidden]{display:none}
+.payment-comment,.payment-plan>button{grid-column:1/-1}
+.payment-series{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:12px 0;padding:12px;border:1px dashed #ff9e3d88;border-radius:12px;background:#12315f}
+.payment-series small,.payment-series button{grid-column:1/-1}
+.payment-series small,.value-hint{color:#ffd7a8;font-size:11px}
+.asset-card{margin-top:14px}
+.asset-card-head,.asset-pay{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.asset-card h3{margin:4px 0;color:#fff;font:800 22px Manrope}
+.asset-card-head span,.asset-pay span,.asset-pay small{display:block;color:#a9bde2}
+.asset-metrics,.asset-value-block{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:14px}
+.asset-metrics div,.asset-value-block div,.asset-revalue{padding:12px;border-radius:12px;background:#10347a;border:1px solid #1e4b97}
+.asset-metrics span,.asset-value-block span,.asset-revalue span{display:block;color:#a9bde2;font-size:11px;font-weight:700}
+.asset-metrics strong,.asset-value-block strong,.asset-revalue strong{display:block;margin-top:6px;color:#fff;font:800 18px Manrope}
+.asset-metrics small,.asset-revalue small{display:block;margin-top:6px;color:#ffd7a8;font-size:11px;line-height:1.4}
+.asset-schedule{margin-top:14px}
+.asset-schedule h4,.safe-history h4{margin:0 0 8px;color:#a9bde2;font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+.asset-pay{padding:10px 0;border-top:1px solid #1d4380}
+.asset-pay.is-overdue strong{color:#ffb067}
+.asset-pay.is-paid{opacity:.72}
+.asset-revalue{margin-top:10px}
+@media(max-width:900px){.asset-metrics,.asset-value-block,.payment-plan,.payment-series{grid-template-columns:1fr 1fr}}
 @media(max-width:720px){.safe-total,.safe-card-head,.safe-dash,.fx-grid{display:block}.safe-balance{text-align:left;margin-top:12px}}

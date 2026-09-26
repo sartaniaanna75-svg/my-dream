@@ -1,5 +1,6 @@
 function markObligationPayment(kind, ownerId, paymentId) {
   if (kind === 'asset') {
+    if (typeof openPaymentFact === 'function') { openPaymentFact(ownerId, paymentId); return; }
     const asset = state.assets.find(function (item) { return item.id === ownerId; });
     const payment = asset && assetPayments(asset).find(function (item) { return item.id === paymentId; });
     if (payment) {
@@ -36,7 +37,12 @@ function compactObligationCard(item) {
     return rub(amount);
   };
   const fxNote = item.asset && item.asset.currency && item.asset.currency !== 'RUB' && typeof rubApprox === 'function' ? '<p class="fx-obligation-note">Стоимость сегодня ' + rubApprox(item.total, item.asset.currency, item.asset) + (typeof actualSpentText === 'function' ? ' · реально потрачено ' + actualSpentText(item.asset) : '') + '</p>' : '';
-  const payment = function (entry) { return '<div class="compact-payment ' + (entry.status === 'Оплачено' ? 'compact-paid' : '') + '"><div><strong>' + (entry.status === 'Оплачено' ? '✓ ' : '') + showMoney(entry.amount) + '</strong><span>' + dateText(entry.date) + '</span></div><span class="compact-status">' + (entry.status === 'Оплачено' ? 'Оплачено' : 'Предстоит') + '</span></div>'; };
+  const displayStatus = function (entry) {
+    if (entry.status === 'Оплачено') return 'Оплачено';
+    if (entry.status === 'Просрочено' || (entry.date && daysFromNow(entry.date) < 0)) return 'Просрочено';
+    return 'Предстоит';
+  };
+  const payment = function (entry) { const status = displayStatus(entry); return '<div class="compact-payment ' + (entry.status === 'Оплачено' ? 'compact-paid' : '') + '"><div><strong>' + (entry.status === 'Оплачено' ? '✓ ' : '') + showMoney(entry.status === 'Оплачено' ? (entry.paidAmount != null && entry.paidAmount !== '' ? entry.paidAmount : entry.amount) : entry.amount) + '</strong><span>' + dateText(entry.status === 'Оплачено' && entry.paidDate ? entry.paidDate : entry.date) + '</span></div><span class="compact-status">' + status + '</span></div>'; };
   const history = paid.length ? '<div class="payment-group"><h4>История оплаченных</h4>' + paid.map(payment).join('') + '</div>' : '';
   const future = upcoming.length ? '<div class="payment-group"><h4>Предстоящие</h4>' + upcoming.map(payment).join('') + '</div>' : '';
   const nextBlock = next ? '<div class="nearest-payment"><div><small>Ближайший платёж</small><strong>' + showMoney(next.amount) + '</strong><span>' + dateText(next.date) + '</span></div><button class="primary-button compact-paid-button" onclick="markObligationPayment(\'' + item.kind + '\',\'' + ownerId + '\',\'' + next.id + '\')">Оплачено</button></div>' : (item.remaining <= 0 ? '<div class="fully-paid-badge">✓ Полностью оплачено</div>' : '<div class="no-payment-schedule">Будущие платежи не добавлены</div>');

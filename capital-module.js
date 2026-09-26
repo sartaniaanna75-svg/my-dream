@@ -134,6 +134,11 @@
   }
   window.obligationRemainingRub = obligationRemainingRub;
 
+  function settledCurrency(payment) {
+    if (payment.paidAmount != null && payment.paidAmount !== '') return num(payment.paidAmount);
+    return num(payment.amount);
+  }
+
   function actualRubSpent(asset) {
     const currency = (asset && asset.currency) || 'RUB';
     const base = asset.paidBase === undefined ? num(asset.paid) : num(asset.paidBase);
@@ -144,12 +149,20 @@
     else if (base > 0) known = false;
     assetPayments(asset).filter(function (payment) { return payment.status === 'Оплачено'; }).forEach(function (payment) {
       const paymentCurrency = payment.currency || currency;
-      if (paymentCurrency === 'RUB') total += num(payment.amount);
-      else if (payment.rubActual != null && payment.rubActual !== '') total += num(payment.rubActual);
-      else known = false;
+      if (payment.rubActual != null && payment.rubActual !== '') { total += num(payment.rubActual); return; }
+      if (paymentCurrency === 'RUB') { total += settledCurrency(payment); return; }
+      if (payment.payRate != null && payment.payRate !== '' && num(payment.payRate) > 0) { total += settledCurrency(payment) * num(payment.payRate); return; }
+      known = false;
     });
     return { total: total, known: known };
   }
+
+  assetPaid = function (asset) {
+    const base = asset.paidBase === undefined ? num(asset.paid) : num(asset.paidBase);
+    return base + assetPayments(asset).filter(function (payment) { return payment.status === 'Оплачено'; }).reduce(function (sum, payment) {
+      return sum + settledCurrency(payment);
+    }, 0);
+  };
 
   function actualSpentText(asset) {
     const spent = actualRubSpent(asset);
@@ -366,57 +379,192 @@
     }
   };
 
+  function formatDecimal(value) {
+    const rounded = Math.round(num(value) * 100) / 100;
+    if (!rounded) return '';
+    return String(rounded).replace('.', ',');
+  }
+
+  function signedOriginal(amount, currency) {
+    const n = Number(amount) || 0;
+    const text = moneyOriginal(Math.abs(n), currency);
+    if (n > 0) return '+' + text;
+    if (n < 0) return '−' + text;
+    return text;
+  }
+
+  function contractTodayText(asset) {
+    const currency = asset.currency || 'RUB';
+    if (currency === 'RUB') return '';
+    const text = rubApprox(asset.price, currency, asset);
+    return text === 'курс не задан' ? text : text + ' по текущему курсу';
+  }
+
+  function paymentDisplayStatus(payment) {
+    if (payment.status === 'Оплачено') return 'Оплачено';
+    if (payment.status === 'Просрочено' || (payment.date && daysFromNow(payment.date) < 0)) return 'Просрочено';
+    return 'Предстоит';
+  }
+
+  function assetCard(asset) {
+    const currency = asset.currency || 'RUB';
+    const foreign = currency !== 'RUB';
+    const change = num(asset.value) - num(asset.price);
+    const initial = num(asset.initialRate);
+    const current = liveRate(currency, asset);
+    const revalue = foreign && initial > 1 && current > 0 ? num(asset.value) * (current - initial) : null;
+    const payments = assetPayments(asset).slice().sort(function (a, b) { return (a.date || '').localeCompare(b.date || ''); });
+    const schedule = payments.map(function (payment) {
+      const status = paymentDisplayStatus(payment);
+      const shown = payment.status === 'Оплачено' ? settledCurrency(payment) : num(payment.amount);
+      const fact = payment.status === 'Оплачено' && payment.rubActual != null && payment.rubActual !== '' ? '<small>потрачено ' + rub(payment.rubActual) + (payment.payRate ? ' · курс ' + formatDecimal(payment.payRate) : '') + '</small>' : '';
+      const action = payment.status === 'Оплачено' ? '' : '<button type="button" class="ghost-button" onclick="openPaymentFact(\'' + asset.id + '\',\'' + payment.id + '\')">Отметить оплату</button>';
+      return '<div class="asset-pay ' + (status === 'Просрочено' ? 'is-overdue' : '') + ' ' + (status === 'Оплачено' ? 'is-paid' : '') + '"><div><strong>' + moneyOriginal(shown, payment.currency || currency) + '</strong><span>' + dateText(payment.status === 'Оплачено' && payment.paidDate ? payment.paidDate : payment.date) + ' · ' + status + (payment.comment ? ' · ' + esc(payment.comment) : '') + '</span>' + fact + '</div>' + action + '</div>';
+    }).join('');
+    const revalueBlock = !foreign ? '' : '<div class="asset-revalue"><span>Валютная переоценка</span><strong>' + (revalue == null ? 'Курс при внесении не указан' : signedOriginal(revalue, 'RUB')) + '</strong><small>Это не полученная прибыль. Так меняется рублёвый эквивалент текущей оценки из-за курса, сама цена в ' + currency + ' при этом не считается доходом.</small></div>';
+    const todayValue = foreign ? (rubApprox(asset.value, currency, asset) === 'курс не задан' ? 'курс не задан' : rub(assetAmountRub(asset, asset.value))) : rub(asset.value);
+    return '<article class="asset-card panel"><div class="asset-card-head"><div><p class="eyebrow">' + esc(currency) + '</p><h3>' + esc(asset.name) + '</h3><span>' + esc(asset.type || asset.category || 'Имущество') + (asset.description ? ' · ' + esc(asset.description) : '') + '</span></div><div class="button-row">' + actions('asset', asset.id) + '</div></div><div class="asset-metrics"><div><span>Стоимость по договору</span><strong>' + moneyOriginal(asset.price, currency) + '</strong>' + (foreign ? '<small>' + contractTodayText(asset) + '</small>' : '') + '</div><div><span>Оплачено</span><strong>' + moneyOriginal(assetPaid(asset), currency) + '</strong></div><div><span>Осталось</span><strong>' + moneyOriginal(assetRemaining(asset), currency) + '</strong></div><div><span>Фактически вложено</span><strong>' + actualSpentText(asset) + '</strong></div></div><div class="asset-value-block"><div><span>Текущая оценка</span><strong>' + moneyOriginal(asset.value, currency) + '</strong></div>' + (foreign ? '<div><span>Текущий курс</span><strong>' + rateLabel(currency, asset) + '</strong></div>' : '') + '<div><span>Стоимость сегодня</span><strong>' + todayValue + '</strong></div><div><span>Изменение цены объекта</span><strong>' + signedOriginal(change, currency) + '</strong></div></div>' + revalueBlock + '<div class="asset-schedule"><h4>График платежей</h4>' + (schedule || '<div class="empty">Платежей пока нет. Откройте карточку и добавьте график.</div>') + '</div></article>';
+  }
+
   assets = function () {
     ensureCapitalState();
-    const rows = state.assets.map(function (asset) {
-      const currency = asset.currency || 'RUB';
-      const contract = moneyOriginal(asset.price, currency) + (currency === 'RUB' ? '' : '<br><span class="muted">сегодня ' + rubApprox(asset.price, currency, asset) + '</span>');
-      const paid = moneyOriginal(assetPaid(asset), currency) + '<br><span class="muted">осталось ' + moneyOriginal(assetRemaining(asset), currency) + '</span>' + (currency === 'RUB' ? '' : '<br><span class="muted">реально потрачено ' + actualSpentText(asset) + '</span>');
-      const appraisal = currency === 'RUB'
-        ? '<strong>' + rub(asset.value) + '</strong>'
-        : '<strong>' + moneyOriginal(asset.value, currency) + '</strong><br><span class="muted">сегодня ' + rubApprox(asset.value, currency, asset) + '</span>';
-      return '<tr><td><strong>' + esc(asset.name) + '</strong><br><span class="muted">' + esc(asset.type || asset.category || '') + ' · ' + esc(asset.description || '') + '</span></td><td>' + contract + '</td><td>' + paid + '</td><td>' + appraisal + '<br><span class="muted">' + esc(asset.usageStatus || asset.status || '') + '</span></td><td>' + esc(asset.owner || '—') + '</td><td>' + actions('asset', asset.id) + '</td></tr>';
-    }).join('');
     const total = state.assets.reduce(function (sum, asset) { return sum + assetAmountRub(asset, asset.value); }, 0);
-    return listView('asset', 'Имущество', 'Оценочная стоимость сегодня: ' + rub(total) + '. Сумма договора хранится в валюте покупки.', 'Добавить объект', ['Объект', 'Стоимость', 'Оплачено', 'Стоимость сегодня', 'Оформлено на'], rows);
+    const cards = state.assets.map(assetCard).join('');
+    return '<div class="view-wrap"><div class="section-heading"><div><p class="eyebrow">УПРАВЛЕНИЕ ДАННЫМИ</p><h2>Имущество</h2><p>Стоимость сегодня: ' + rub(total) + '. Сумма договора хранится в валюте покупки и не меняется из-за курса.</p></div><button class="primary-button" type="button" onclick="openForm(\'asset\')">＋ Добавить объект</button></div>' + (cards || '<div class="panel empty">Объектов пока нет.</div>') + '</div>';
   };
 
   const priceField = schemas.asset && schemas.asset.fields.find(function (item) { return item[0] === 'price'; });
   if (priceField) priceField[1] = 'Стоимость по договору';
 
-  function rubInput(row, value) {
-    if (!row || row.querySelector('[name="payment-rub"]')) return;
-    const input = document.createElement('input');
-    input.name = 'payment-rub';
-    input.setAttribute('inputmode', 'decimal');
-    input.placeholder = 'Потрачено, ₽';
-    input.className = 'payment-rub';
-    input.value = value == null ? '' : value;
-    const remove = row.querySelector('button');
-    if (remove) row.insertBefore(input, remove);
-    else row.appendChild(input);
+  function formCurrency() {
+    const form = document.getElementById('record-form');
+    const field = form && form.querySelector('[name="currency"]');
+    return field && field.value ? field.value : 'RUB';
+  }
+
+  function paymentRowHtml(payment) {
+    const currency = payment.currency || formCurrency();
+    const status = payment.status || 'Предстоит';
+    const options = ['Предстоит', 'Оплачено', 'Просрочено'].map(function (item) {
+      return '<option ' + (status === item ? 'selected' : '') + '>' + item + '</option>';
+    }).join('');
+    const currencies = ['RUB', 'USD', 'EUR'].map(function (item) {
+      return '<option ' + (currency === item ? 'selected' : '') + '>' + item + '</option>';
+    }).join('');
+    return '<div class="payment-row payment-plan"><input name="payment-id" type="hidden" value="' + esc(payment.id || '') + '"><label>Плановая дата<input name="payment-date" type="date" value="' + esc(payment.date || '') + '"></label><label>Плановая сумма<input name="payment-amount" inputmode="decimal" value="' + esc(payment.amount ?? '') + '"></label><label>Валюта<select name="payment-currency">' + currencies + '</select></label><label>Статус<select name="payment-status">' + options + '</select></label><div class="payment-fact"><label>Фактическая дата<input name="payment-paid-date" type="date" value="' + esc(payment.paidDate || '') + '"></label><label>Оплачено<input name="payment-paid-amount" inputmode="decimal" value="' + esc(payment.paidAmount ?? '') + '"></label><label class="payment-rate-field">Курс оплаты<input name="payment-rate" inputmode="decimal" value="' + esc(payment.payRate != null && payment.payRate !== '' ? formatDecimal(payment.payRate) : '') + '"></label><label>Фактически потрачено, ₽<input name="payment-rub" inputmode="decimal" data-manual="' + (payment.rubActual != null && payment.rubActual !== '' ? '1' : '0') + '" value="' + esc(payment.rubActual ?? '') + '"></label></div><label class="payment-comment">Комментарий<input name="payment-comment" value="' + esc(payment.comment || '') + '"></label><button type="button" class="ghost-button" onclick="this.parentElement.remove()">Удалить</button></div>';
+  }
+
+  function prefillFact(row) {
+    const paidDate = row.querySelector('[name="payment-paid-date"]');
+    const paidAmount = row.querySelector('[name="payment-paid-amount"]');
+    const rate = row.querySelector('[name="payment-rate"]');
+    const rubles = row.querySelector('[name="payment-rub"]');
+    const planned = num(row.querySelector('[name="payment-amount"]').value);
+    const currency = row.querySelector('[name="payment-currency"]').value || 'RUB';
+    if (paidDate && !paidDate.value) paidDate.value = isoDate(today);
+    if (paidAmount && paidAmount.value === '') paidAmount.value = row.querySelector('[name="payment-amount"]').value;
+    if (currency !== 'RUB' && rate && rate.value === '') {
+      const current = liveRate(currency);
+      if (current > 0) rate.value = formatDecimal(current);
+    }
+    if (rubles && rubles.dataset.manual !== '1' && rubles.value === '') {
+      if (currency === 'RUB') rubles.value = paidAmount.value;
+      else if (num(rate.value) > 0) rubles.value = formatDecimal((paidAmount.value === '' ? planned : num(paidAmount.value)) * num(rate.value));
+    }
+  }
+
+  function wirePaymentRow(row) {
+    const status = row.querySelector('[name="payment-status"]');
+    const fact = row.querySelector('.payment-fact');
+    const rate = row.querySelector('[name="payment-rate"]');
+    const rubles = row.querySelector('[name="payment-rub"]');
+    const paidAmount = row.querySelector('[name="payment-paid-amount"]');
+    const currency = row.querySelector('[name="payment-currency"]');
+    const date = row.querySelector('[name="payment-date"]');
+    function sync() {
+      const paid = status.value === 'Оплачено';
+      fact.hidden = !paid;
+      const foreign = (currency.value || 'RUB') !== 'RUB';
+      row.querySelector('.payment-rate-field').hidden = !foreign;
+    }
+    status.addEventListener('change', function () {
+      if (status.value === 'Оплачено') prefillFact(row);
+      sync();
+    });
+    currency.addEventListener('change', sync);
+    rate.addEventListener('input', function () {
+      if (rubles.dataset.manual === '1') return;
+      const amount = num(paidAmount.value || row.querySelector('[name="payment-amount"]').value);
+      if (num(rate.value) > 0) rubles.value = formatDecimal(amount * num(rate.value));
+    });
+    paidAmount.addEventListener('input', function () {
+      if (rubles.dataset.manual === '1') return;
+      const currentRate = num(rate.value);
+      if ((currency.value || 'RUB') === 'RUB') rubles.value = paidAmount.value;
+      else if (currentRate > 0) rubles.value = formatDecimal(num(paidAmount.value) * currentRate);
+    });
+    rubles.addEventListener('input', function () { rubles.dataset.manual = '1'; });
+    if (date) bindPaymentDate(date);
+    sync();
+  }
+
+  function readPaymentExtras(row) {
+    const rubles = row.querySelector('[name="payment-rub"]');
+    const rate = row.querySelector('[name="payment-rate"]');
+    const paidAmount = row.querySelector('[name="payment-paid-amount"]');
+    return {
+      id: row.querySelector('[name="payment-id"]').value,
+      currency: row.querySelector('[name="payment-currency"]').value || 'RUB',
+      paidDate: row.querySelector('[name="payment-paid-date"]').value,
+      paidAmount: paidAmount.value.trim() === '' ? '' : num(paidAmount.value),
+      payRate: rate.value.trim() === '' ? '' : num(rate.value),
+      rubActual: !rubles || rubles.value.trim() === '' ? '' : num(rubles.value),
+      rubManual: rubles && rubles.dataset.manual === '1',
+      comment: row.querySelector('[name="payment-comment"]').value.trim()
+    };
   }
 
   function syncForeignFields(form) {
     const currency = form.querySelector('[name="currency"]');
     const foreign = !!(currency && currency.value !== 'RUB');
     form.querySelectorAll('.paid-rub-field, .fx-asset-note').forEach(function (node) { node.hidden = !foreign; });
-    form.querySelectorAll('.payment-rub').forEach(function (node) { node.hidden = !foreign; });
   }
+
+  window.addPaymentSeries = function () {
+    const form = document.getElementById('record-form');
+    if (!form) return;
+    const count = Math.round(num(form.querySelector('[name="series-count"]').value));
+    const amount = form.querySelector('[name="series-amount"]').value;
+    const start = form.querySelector('[name="series-start"]').value;
+    if (!(count > 0) || num(amount) <= 0 || !start) { alert('Укажите первую дату, сумму и количество платежей.'); return; }
+    const limit = Math.min(count, 120);
+    const date = new Date(start + 'T12:00:00');
+    for (let index = 0; index < limit; index += 1) {
+      window.addPaymentRow({ date: isoDate(date), amount: amount, currency: formCurrency(), status: 'Предстоит' });
+      date.setMonth(date.getMonth() + 1);
+    }
+  };
 
   function decorateAssetForm(id) {
     const form = document.getElementById('record-form');
     if (!form || form.dataset.fxReady) return;
     form.dataset.fxReady = '1';
     const asset = (id && state.assets.find(function (item) { return item.id === id; })) || {};
-    const payments = assetPayments(asset);
-    [...form.querySelectorAll('#payment-rows .payment-row')].forEach(function (row, index) {
-      rubInput(row, payments[index] ? payments[index].rubActual : '');
-    });
-    const section = form.querySelector('.payment-section');
-    if (section && !form.querySelector('[name="paidRub"]')) {
-      section.insertAdjacentHTML('afterbegin', '<div class="paid-rub-field form-field"><label>Уже оплачено фактически, ₽</label><input name="paidRub" inputmode="decimal" value="' + esc(asset.paidRub ?? '') + '"><small>Сколько рублей вы реально потратили на уже внесённую часть. Изменение курса это число не пересчитывает.</small></div><p class="fx-asset-note">Стоимость по договору остаётся в валюте покупки. Строка «сегодня» считается по курсу из настроек.</p>');
+    const container = form.querySelector('#payment-rows');
+    if (container) {
+      container.innerHTML = assetPayments(asset).map(paymentRowHtml).join('');
+      [...container.querySelectorAll('.payment-row')].forEach(wirePaymentRow);
     }
+    const section = form.querySelector('.payment-section');
+    if (section && !form.querySelector('[name="series-count"]')) {
+      const head = section.querySelector('.payment-section-head');
+      if (head) head.insertAdjacentHTML('afterend', '<div class="payment-series"><label>Первая дата<input name="series-start" type="date"></label><label>Сумма<input name="series-amount" inputmode="decimal"></label><label>Количество<input name="series-count" inputmode="numeric" placeholder="12"></label><button type="button" class="ghost-button" onclick="addPaymentSeries()">Добавить все платежи</button><small>Платежи создаются раз в месяц, начиная с первой даты. Их можно поправить по отдельности.</small></div>');
+    }
+    if (section && !form.querySelector('[name="paidRub"]')) {
+      section.insertAdjacentHTML('afterbegin', '<div class="paid-rub-field form-field"><label>Уже оплачено фактически, ₽</label><input name="paidRub" inputmode="decimal" value="' + esc(asset.paidRub ?? '') + '"><small>Только для части, внесённой до графика. Курс это число потом не пересчитывает.</small></div><p class="fx-asset-note">Стоимость по договору остаётся в валюте покупки. «Фактически вложено» складывается из рублей, указанных в оплаченных платежах.</p>');
+    }
+    const valueField = form.querySelector('[name="value"]');
+    if (valueField && !form.querySelector('.value-hint')) valueField.insertAdjacentHTML('afterend', '<small class="value-hint">Меняет только текущую оценку. Стоимость по договору останется прежней.</small>');
     const currency = form.querySelector('[name="currency"]');
     if (currency) currency.addEventListener('change', function () { syncForeignFields(form); });
     syncForeignFields(form);
@@ -425,24 +573,32 @@
       const assetName = form.elements.name ? form.elements.name.value : '';
       const paidRubRaw = form.elements.paidRub ? form.elements.paidRub.value : '';
       const currencyValue = form.elements.currency ? form.elements.currency.value : 'RUB';
-      const rubs = [...form.querySelectorAll('#payment-rows .payment-row')].filter(function (row) {
+      const extras = [...form.querySelectorAll('#payment-rows .payment-row')].filter(function (row) {
         const date = row.querySelector('[name="payment-date"]');
         const amount = row.querySelector('[name="payment-amount"]');
         return date && date.value && num(amount && amount.value) > 0;
-      }).map(function (row) {
-        const input = row.querySelector('[name="payment-rub"]');
-        return input ? input.value : '';
-      });
+      }).map(readPaymentExtras);
       const result = previous ? previous.call(this, event) : undefined;
-      if (currencyValue === 'RUB') return result;
       const saved = id
         ? state.assets.find(function (item) { return item.id === id; })
         : state.assets.slice().reverse().find(function (item) { return item.name === assetName; });
       if (!saved) return result;
-      saved.paidRub = paidRubRaw.trim() === '' ? '' : num(paidRubRaw);
+      if (currencyValue !== 'RUB') saved.paidRub = paidRubRaw.trim() === '' ? '' : num(paidRubRaw);
       (saved.payments || []).forEach(function (payment, index) {
-        payment.currency = saved.currency || currencyValue;
-        payment.rubActual = rubs[index] == null || String(rubs[index]).trim() === '' ? '' : num(rubs[index]);
+        const extra = extras[index];
+        if (!extra) return;
+        if (extra.id) payment.id = extra.id;
+        payment.currency = extra.currency || saved.currency || currencyValue;
+        payment.paidDate = extra.paidDate;
+        payment.paidAmount = extra.paidAmount;
+        payment.payRate = extra.payRate;
+        payment.comment = extra.comment;
+        if (payment.status === 'Оплачено') {
+          if (extra.rubActual !== '') payment.rubActual = extra.rubActual;
+          else if (extra.payRate !== '' && num(extra.payRate) > 0) payment.rubActual = Math.round(settledCurrency(payment) * num(extra.payRate) * 100) / 100;
+          else if ((payment.currency || 'RUB') === 'RUB') payment.rubActual = settledCurrency(payment);
+          else payment.rubActual = '';
+        } else payment.rubActual = extra.rubActual;
       });
       save();
       render();
@@ -450,19 +606,74 @@
     };
   }
 
+  window.openPaymentFact = function (assetId, paymentId) {
+    const asset = state.assets.find(function (item) { return item.id === assetId; });
+    const payment = asset && assetPayments(asset).find(function (item) { return item.id === paymentId; });
+    if (!asset || !payment) return;
+    const currency = payment.currency || asset.currency || 'RUB';
+    const foreign = currency !== 'RUB';
+    const planned = num(payment.amount);
+    const currentRate = foreign ? liveRate(currency, asset) : 1;
+    const paidAmount = payment.paidAmount != null && payment.paidAmount !== '' ? payment.paidAmount : planned;
+    const rateValue = payment.payRate != null && payment.payRate !== '' ? formatDecimal(payment.payRate) : (currentRate > 0 && currentRate !== 1 ? formatDecimal(currentRate) : '');
+    const rubValue = payment.rubActual != null && payment.rubActual !== '' ? formatDecimal(payment.rubActual) : (foreign && num(rateValue) > 0 ? formatDecimal(num(paidAmount) * num(rateValue)) : formatDecimal(paidAmount));
+    modalShell('Фактическая оплата',
+      '<p class="safe-note">План: ' + moneyOriginal(planned, currency) + ' · ' + dateText(payment.date) + '. Если введёте рубли вручную, сохранится именно эта сумма, а не сегодняшний курс.</p>' +
+      field('Фактическая дата оплаты', '<input name="paidDate" type="date" value="' + esc(payment.paidDate || isoDate(today)) + '" required>') +
+      field('Оплачено, ' + currency, '<input name="paidAmount" inputmode="decimal" value="' + esc(paidAmount) + '">') +
+      (foreign ? field('Курс фактической оплаты', '<input name="payRate" inputmode="decimal" value="' + esc(rateValue) + '">') : '') +
+      field('Фактически потрачено, ₽', '<input name="rubActual" inputmode="decimal" value="' + esc(rubValue) + '">') +
+      field('Комментарий', '<input name="comment" value="' + esc(payment.comment || '') + '">'),
+      'Сохранить оплату',
+      function (form) {
+        const amount = num(form.elements.paidAmount.value);
+        const rate = form.elements.payRate ? num(form.elements.payRate.value) : 0;
+        const rubRaw = form.elements.rubActual.value.trim();
+        if (!(amount > 0)) { alert('Укажите оплаченную сумму.'); return; }
+        if (!form.elements.paidDate.value) { alert('Укажите фактическую дату.'); return; }
+        if (foreign && rubRaw === '' && !(rate > 0)) { alert('Укажите курс оплаты или фактически потраченные рубли.'); return; }
+        if (asset.paidBase === undefined) asset.paidBase = num(asset.paid);
+        payment.status = 'Оплачено';
+        payment.currency = currency;
+        payment.paidDate = form.elements.paidDate.value;
+        payment.paidAmount = amount;
+        payment.payRate = foreign && rate > 0 ? rate : '';
+        payment.comment = form.elements.comment.value.trim();
+        payment.rubActual = rubRaw === '' ? Math.round(amount * rate * 100) / 100 : num(rubRaw);
+        asset.paid = assetPaid(asset);
+        save();
+        closeModal();
+        render();
+      });
+    const form = document.getElementById('safe-form');
+    const rubInput = form.querySelector('[name="rubActual"]');
+    const rateInput = form.querySelector('[name="payRate"]');
+    const amountInput = form.querySelector('[name="paidAmount"]');
+    let rubTouched = payment.rubActual != null && payment.rubActual !== '';
+    function refill() {
+      if (rubTouched) return;
+      const amount = num(amountInput.value);
+      if (!foreign) { rubInput.value = formatDecimal(amount); return; }
+      const rate = num(rateInput && rateInput.value);
+      if (rate > 0) rubInput.value = formatDecimal(amount * rate);
+    }
+    if (amountInput) amountInput.addEventListener('input', refill);
+    if (rateInput) rateInput.addEventListener('input', refill);
+    if (rubInput) rubInput.addEventListener('input', function () { rubTouched = true; });
+  };
+
   const previousOpenForm = window.openForm;
   window.openForm = function (type, id) {
     previousOpenForm(type, id);
     if (type === 'asset') decorateAssetForm(id);
   };
 
-  const previousAddPaymentRow = window.addPaymentRow;
-  window.addPaymentRow = function () {
-    previousAddPaymentRow();
-    const form = document.getElementById('record-form');
-    const row = form && form.querySelector('#payment-rows .payment-row:last-child');
-    rubInput(row, '');
-    if (form) syncForeignFields(form);
+  window.addPaymentRow = function (payment) {
+    const container = document.getElementById('payment-rows');
+    if (!container) return;
+    const item = payment && payment.date ? payment : { currency: formCurrency(), status: 'Предстоит' };
+    container.insertAdjacentHTML('beforeend', paymentRowHtml(item));
+    wirePaymentRow(container.lastElementChild);
   };
 
   const baseRender = render;
