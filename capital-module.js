@@ -423,6 +423,22 @@
     return liveRate(currency, asset) || 0;
   }
 
+  function assetCity(asset) {
+    if (asset.city) return String(asset.city).trim();
+    const text = String(asset.description || '').trim();
+    if (!text) return '';
+    const comma = text.indexOf(',');
+    return (comma > 0 ? text.slice(0, comma) : text).trim();
+  }
+
+  function signedRub(amount) {
+    const n = Number(amount) || 0;
+    const text = rub(Math.abs(n));
+    if (n > 0) return '+' + text;
+    if (n < 0) return '−' + text;
+    return text;
+  }
+
   function assetCard(asset) {
     const currency = asset.currency || 'RUB';
     const foreign = assetIsForeign(asset);
@@ -430,27 +446,6 @@
     const initial = num(asset.initialRate);
     const current = liveRate(currency, asset);
     const revalue = foreign && initial > 1 && current > 0 ? num(asset.value) * (current - initial) : null;
-    const payments = assetPayments(asset).slice().sort(function (a, b) { return (a.date || '').localeCompare(b.date || ''); });
-    const schedule = payments.map(function (payment) {
-      const status = paymentDisplayStatus(payment);
-      const payCurrency = payment.currency || currency;
-      const shown = payment.status === 'Оплачено' ? settledCurrency(payment) : num(payment.amount);
-      const action = payment.status === 'Оплачено' ? '' : '<button type="button" class="ghost-button" onclick="openPaymentFact(\'' + asset.id + '\',\'' + payment.id + '\')">Отметить оплату</button>';
-      const when = dateText(payment.status === 'Оплачено' && payment.paidDate ? payment.paidDate : payment.date) + ' · ' + status + (payment.comment ? ' · ' + esc(payment.comment) : '');
-      if (!foreign) {
-        const fact = payment.status === 'Оплачено' && payment.rubActual != null && payment.rubActual !== '' ? '<small>потрачено ' + rub(payment.rubActual) + '</small>' : '';
-        return '<div class="asset-pay ' + (status === 'Просрочено' ? 'is-overdue' : '') + ' ' + (status === 'Оплачено' ? 'is-paid' : '') + '"><div><strong>' + moneyOriginal(shown, 'RUB') + '</strong><span>' + when + '</span>' + fact + '</div>' + action + '</div>';
-      }
-      if (payment.status === 'Оплачено') {
-        const spent = payment.rubActual != null && payment.rubActual !== '' ? rub(payment.rubActual) : 'не указано';
-        const paidRate = payment.payRate != null && payment.payRate !== '' && num(payment.payRate) > 0 ? formatDecimal(payment.payRate) + ' ' + rateUnit(payCurrency) : 'сохранён вместе с оплатой';
-        return '<div class="asset-pay is-paid"><div class="asset-pay-lines"><strong>Оплачено: ' + moneyOriginal(shown, payCurrency) + '</strong><span>Фактически потрачено: ' + spent + '</span><span>Курс оплаты: ' + paidRate + '</span><span>' + when + '</span></div></div>';
-      }
-      const planRate = paymentPlanRate(payment, payCurrency, asset);
-      const need = planRate > 0 ? '≈ ' + rub(num(payment.amount) * planRate) : 'курс не задан';
-      const rateText = planRate > 0 ? formatDecimal(planRate) : '';
-      return '<div class="asset-pay ' + (status === 'Просрочено' ? 'is-overdue' : '') + '"><div class="asset-pay-lines"><strong>К оплате: ' + moneyOriginal(payment.amount, payCurrency) + '</strong><span class="plan-need">Нужно подготовить сегодня: ' + need + '</span><label class="plan-rate-edit">Курс для расчёта <input inputmode="decimal" value="' + esc(rateText) + '" data-amount="' + esc(payment.amount) + '" data-currency="' + esc(payCurrency) + '" oninput="previewPaymentPlan(this)" onblur="setPaymentPlanRate(\'' + asset.id + '\',\'' + payment.id + '\',this)"> <em>' + rateUnit(payCurrency) + '</em></label><span>' + when + '</span></div>' + action + '</div>';
-    }).join('');
     const revalueBlock = !foreign ? '' : '<div class="asset-revalue"><span>Валютная переоценка</span><strong>' + (revalue == null ? 'Курс при внесении не указан' : signedOriginal(revalue, 'RUB')) + '</strong><small>Это не полученная прибыль. Так меняется рублёвый эквивалент текущей оценки из-за курса, сама цена в ' + currency + ' при этом не считается доходом.</small></div>';
     const todayValue = foreign ? (rubApprox(asset.value, currency, asset) === 'курс не задан' ? 'курс не задан' : rub(assetAmountRub(asset, asset.value))) : rub(asset.value);
     const prepareRate = liveRate(currency, asset);
@@ -461,8 +456,33 @@
     const valueBlock = foreign
       ? '<div class="asset-value-block"><div><span>Текущая оценка</span><strong>' + moneyOriginal(asset.value, currency) + '</strong></div><div><span>Текущий курс</span><strong>' + rateLabel(currency, asset) + '</strong></div><div><span>Стоимость сегодня</span><strong>' + todayValue + '</strong></div><div><span>Изменение цены объекта</span><strong>' + signedOriginal(change, currency) + '</strong></div></div>'
       : '<div class="asset-value-block"><div><span>Текущая оценка</span><strong>' + rub(asset.value) + '</strong></div><div><span>Стоимость сегодня</span><strong>' + rub(asset.value) + '</strong></div><div><span>Изменение цены объекта</span><strong>' + signedOriginal(change, 'RUB') + '</strong></div></div>';
-    return '<article class="asset-card panel"><div class="asset-card-head"><div><p class="eyebrow">' + (foreign ? 'ЗАРУБЕЖНОЕ ИМУЩЕСТВО' : 'РУБЛИ') + '</p><h3>' + esc(asset.name) + '</h3><span>' + esc(asset.type || asset.category || 'Имущество') + (asset.description ? ' · ' + esc(asset.description) : '') + '</span></div><div class="button-row">' + actions('asset', asset.id) + '</div></div>' + metrics + valueBlock + revalueBlock + '<div class="asset-schedule"><h4>График платежей</h4>' + (schedule || '<div class="empty">Платежей пока нет. Откройте карточку и добавьте график.</div>') + '</div></article>';
+    const typeLabel = esc(asset.type || asset.category || 'Имущество');
+    const city = assetCity(asset);
+    const meta = city ? typeLabel + ' · ' + esc(city) : typeLabel;
+    const buying = assetRemaining(asset) > 0;
+    const currentMain = foreign ? todayValue : rub(asset.value);
+    const currentSub = foreign ? moneyOriginal(asset.value, currency) : '';
+    const remainMain = moneyOriginal(assetRemaining(asset), foreign ? currency : 'RUB');
+    const remainSub = foreign ? prepareText : '';
+    const extras = [
+      asset.owner ? ['Оформлено на', asset.owner] : null,
+      (asset.acquisition || asset.purchase) ? ['Дата приобретения', dateText(asset.acquisition || asset.purchase)] : null,
+      asset.description ? ['Адрес', asset.description] : null,
+      asset.usageStatus ? ['Использование', asset.usageStatus] : null,
+      asset.comment ? ['Комментарий', asset.comment] : null
+    ].filter(Boolean);
+    const extraBlock = extras.length ? '<div class="asset-extra">' + extras.map(function (row) { return '<div><span>' + esc(row[0]) + '</span><strong>' + esc(row[1]) + '</strong></div>'; }).join('') + '</div>' : '';
+    return '<article class="asset-row panel"><div class="asset-row-main"><div class="asset-row-title"><strong>' + esc(asset.name) + '</strong><span>' + meta + '</span></div><div class="asset-row-facts"><div><span>Текущая стоимость</span><strong>' + currentMain + '</strong>' + (currentSub ? '<small>' + currentSub + '</small>' : '') + '</div><div><span>Фактически вложено</span><strong>' + actualSpentText(asset) + '</strong></div><div><span>Осталось оплатить</span><strong>' + remainMain + '</strong>' + (remainSub ? '<small>' + remainSub + '</small>' : '') + '</div></div><span class="tag asset-status ' + (buying ? 'tag-yellow' : 'tag-green') + '">' + (buying ? 'Покупается' : 'Оплачен') + '</span><button type="button" class="ghost-button asset-more" aria-expanded="false" onclick="toggleAssetDetails(\'' + asset.id + '\',this)">Подробнее</button></div><div class="asset-details" id="asset-details-' + asset.id + '" hidden><div class="asset-details-head"><p class="eyebrow">' + (foreign ? 'ЗАРУБЕЖНОЕ ИМУЩЕСТВО' : 'РУБЛИ') + '</p>' + actions('asset', asset.id) + '</div>' + metrics + valueBlock + revalueBlock + extraBlock + '<p class="asset-open-note">График платежей сохранён. Будущие платежи этого объекта показываются в разделе «Обязательства» и не дублируются отдельной записью.</p></div></article>';
   }
+
+  window.toggleAssetDetails = function (id, button) {
+    const panel = document.getElementById('asset-details-' + id);
+    if (!panel) return;
+    const open = panel.hidden;
+    panel.hidden = !open;
+    button.textContent = open ? 'Скрыть' : 'Подробнее';
+    button.setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
 
   window.previewPaymentPlan = function (input) {
     const need = input.closest('.asset-pay') && input.closest('.asset-pay').querySelector('.plan-need');
@@ -496,9 +516,24 @@
 
   assets = function () {
     ensureCapitalState();
-    const total = state.assets.reduce(function (sum, asset) { return sum + assetAmountRub(asset, asset.value); }, 0);
+    let totalValue = 0;
+    let invested = 0;
+    let investedKnown = true;
+    let remaining = 0;
+    let change = 0;
+    state.assets.forEach(function (asset) {
+      const now = assetAmountRub(asset, asset.value);
+      totalValue += now;
+      change += now - assetAmountRub(asset, asset.price);
+      const spent = actualRubSpent(asset);
+      invested += spent.total;
+      if (!spent.known) investedKnown = false;
+      remaining += assetAmountRub(asset, assetRemaining(asset));
+    });
+    const changeClass = change > 0 ? 'positive' : change < 0 ? 'negative' : '';
+    const summary = '<div class="asset-summary"><div><span>Общая стоимость имущества</span><strong>' + rub(totalValue) + '</strong></div><div><span>Фактически вложено</span><strong>' + rub(invested) + '</strong>' + (investedKnown ? '' : '<small>есть платежи без суммы в ₽</small>') + '</div><div><span>Осталось оплатить</span><strong>' + rub(remaining) + '</strong></div><div><span>Изменение стоимости</span><strong class="' + changeClass + '">' + signedRub(change) + '</strong></div></div>';
     const cards = state.assets.map(assetCard).join('');
-    return '<div class="view-wrap"><div class="section-heading"><div><p class="eyebrow">УПРАВЛЕНИЕ ДАННЫМИ</p><h2>Имущество</h2><p>Стоимость сегодня: ' + rub(total) + '. Сумма договора хранится в валюте покупки и не меняется из-за курса.</p></div><button class="primary-button" type="button" onclick="openForm(\'asset\')">＋ Добавить объект</button></div>' + (cards || '<div class="panel empty">Объектов пока нет.</div>') + '</div>';
+    return '<div class="view-wrap"><div class="section-heading"><div><p class="eyebrow">УПРАВЛЕНИЕ ДАННЫМИ</p><h2>Имущество</h2><p>Сумма договора хранится в валюте покупки и не меняется из-за курса. Платежи по покупке — в «Обязательствах».</p></div><button class="primary-button" type="button" onclick="openForm(\'asset\')">＋ Добавить объект</button></div>' + summary + '<div class="asset-list">' + (cards || '<div class="panel empty">Объектов пока нет.</div>') + '</div></div>';
   };
 
   const priceField = schemas.asset && schemas.asset.fields.find(function (item) { return item[0] === 'price'; });

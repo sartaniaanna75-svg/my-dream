@@ -62,8 +62,8 @@ function compactObligationCard(item) {
   const history = paid.length ? '<div class="payment-group"><h4>Оплаченные</h4>' + paid.map(payment).join('') + '</div>' : '';
   const future = upcoming.length ? '<div class="payment-group"><h4>Предстоящие</h4>' + upcoming.map(payment).join('') + '</div>' : '';
   const nextOverdue = next && displayStatus(next) === 'Просрочено';
-  const nextBlock = next && item.remaining > 0
-    ? '<div class="nearest-payment' + (nextOverdue ? ' is-overdue' : '') + '"><div><small>Ближайший платёж</small><strong>' + showMoney(next.amount) + '</strong><span>' + obligationDateWithYear(next.date) + '</span></div><button class="primary-button compact-paid-button" onclick="markObligationPayment(\'' + item.kind + '\',\'' + ownerId + '\',\'' + next.id + '\')">Оплачено</button></div>'
+  const nextBlock = next
+    ? '<div class="nearest-payment' + (nextOverdue ? ' is-overdue' : '') + '"><div><small>Ближайший платёж · ' + item.what + '</small><strong>' + showMoney(next.amount) + '</strong><span>' + obligationDateWithYear(next.date) + '</span></div><button class="primary-button compact-paid-button" onclick="markObligationPayment(\'' + item.kind + '\',\'' + ownerId + '\',\'' + next.id + '\')">Оплачено</button></div>'
     : (item.remaining <= 0 ? '<div class="fully-paid-badge">✓ Полностью оплачено</div>' : '<div class="no-payment-schedule">Будущие платежи не добавлены</div>');
   return '<article class="obligation-card compact-obligation-card"><div class="obligation-card-head"><div><h3>' + item.what + '</h3><span>' + (item.who || '') + '</span></div><span class="tag tag-blue">' + (item.kind === 'asset' ? 'Из имущества' : 'Вручную') + '</span></div><div class="ob-metrics"><div><span>Стоимость</span><strong>' + showMoney(item.total) + '</strong></div><div><span>Оплачено</span><strong>' + showMoney(item.paid) + '</strong></div><div><span>Осталось</span><strong class="danger">' + showMoney(item.remaining) + '</strong></div></div>' + fxNote + nextBlock + '<button class="all-payments-toggle" type="button" onclick="toggleObligationPayments(\'' + item.id + '\',this)">Все платежи (' + all.length + ') ↓</button><div class="all-obligation-payments" id="obligation-payments-' + item.id + '" data-count="' + all.length + '">' + future + history + '</div></article>';
 }
@@ -82,7 +82,9 @@ function nearestObligationPayment(items) {
 
 function compactDebtsView() {
   const active = obligations();
-  const completed = state.assets.filter(function (asset) { return assetRemaining(asset) <= 0; }).map(function (asset) { return { kind: 'asset', id: asset.id, asset: asset, what: asset.name, who: asset.owner || asset.description, total: num(asset.price), paid: assetPaid(asset), remaining: 0, allPayments: assetPayments(asset) }; });
+  const activeAssetIds = {};
+  active.forEach(function (item) { if (item.kind === 'asset' && item.asset) activeAssetIds[item.asset.id] = true; });
+  const completed = state.assets.filter(function (asset) { return assetRemaining(asset) <= 0 && !activeAssetIds[asset.id]; }).map(function (asset) { return { kind: 'asset', id: asset.id, asset: asset, what: asset.name, who: asset.owner || asset.description, total: num(asset.price), paid: assetPaid(asset), remaining: 0, allPayments: assetPayments(asset) }; });
   const snapshot = totals();
   const available = num(snapshot.cash) + num(snapshot.safe);
   const total = active.reduce(function (sum, item) { return sum + (typeof obligationRemainingRub === 'function' ? obligationRemainingRub(item) : item.remaining); }, 0);
