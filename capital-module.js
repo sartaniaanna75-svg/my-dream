@@ -78,7 +78,7 @@
   }
 
   function moneyOriginal(amount, currency) {
-    const formatted = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(num(amount));
+    const formatted = moneyGrouped(amount);
     if (currency === 'USD') return '$' + formatted;
     if (currency === 'EUR') return '€' + formatted;
     return rub(amount);
