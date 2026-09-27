@@ -187,10 +187,26 @@
     return '<tr class="deposit-detail-row"><td colspan="7"><div class="deposit-detail">' + factHtml + allocationBlock(deposit) + historyBlock(deposit) + '</div></td></tr>';
   }
 
+  function depositsByNextDate() {
+    return state.deposits.map(function (deposit, index) {
+      return { deposit: deposit, index: index };
+    }).sort(function (a, b) {
+      const left = a.deposit.nextDate || '';
+      const right = b.deposit.nextDate || '';
+      if (left !== right) {
+        if (!left) return 1;
+        if (!right) return -1;
+        return left < right ? -1 : 1;
+      }
+      return a.index - b.index;
+    });
+  }
+
   function depositBoard() {
-    const rows = state.deposits.map(function (deposit) {
+    const rows = depositsByNextDate().map(function (item) {
+      const deposit = item.deposit;
       const opened = openDepositId === deposit.id;
-      const main = '<tr><td><strong>' + esc(deposit.bank || '—') + '</strong>' + (deposit.last4 ? '<br><span class="muted">•••• ' + esc(deposit.last4) + '</span>' : '') + '</td><td>' + esc(deposit.name || '—') + '</td><td>' + esc(deposit.owner || '—') + '</td><td><strong>' + rub(deposit.current) + '</strong><br><span class="positive">' + rateText(deposit.rate) + '% годовых</span></td><td>' + dateText(deposit.nextDate) + '</td><td>' + esc(purposeText(deposit)) + '</td><td><div class="button-row"><button class="ghost-button" type="button" onclick="toggleDepositDetail(\'' + deposit.id + '\')">' + (opened ? 'Скрыть' : 'Подробнее') + '</button><button class="ghost-button" type="button" onclick="openDepositOperation(\'' + deposit.id + '\')">+ Операция</button><button class="ghost-button" type="button" onclick="openForm(\'deposit\',\'' + deposit.id + '\')">Изменить</button><button class="ghost-button" type="button" onclick="removeItem(\'deposit\',\'' + deposit.id + '\')">Удалить</button></div></td></tr>';
+      const main = '<tr><td><strong>' + esc(deposit.bank || '—') + '</strong>' + (deposit.last4 ? '<br><span class="muted">•••• ' + esc(deposit.last4) + '</span>' : '') + '</td><td>' + esc(deposit.name || '—') + '</td><td>' + esc(deposit.owner || '—') + '</td><td><strong>' + rub(deposit.current) + '</strong><br><span class="positive">' + rateText(deposit.rate) + '% годовых</span></td><td class="deposit-next">' + dateText(deposit.nextDate) + '</td><td>' + esc(purposeText(deposit)) + '</td><td><div class="button-row"><button class="ghost-button" type="button" onclick="toggleDepositDetail(\'' + deposit.id + '\')">' + (opened ? 'Скрыть' : 'Подробнее') + '</button><button class="ghost-button" type="button" onclick="openDepositOperation(\'' + deposit.id + '\')">+ Операция</button><button class="ghost-button" type="button" onclick="openForm(\'deposit\',\'' + deposit.id + '\')">Изменить</button><button class="ghost-button" type="button" onclick="removeItem(\'deposit\',\'' + deposit.id + '\')">Удалить</button></div></td></tr>';
       return main + (opened ? detailRow(deposit) : '');
     }).join('');
     const table = listView('deposit', 'Вклады', 'Сумма на вкладе, назначение денег и история операций', 'Добавить вклад', ['Банк', 'Вклад', 'На кого оформлен', 'Сумма вклада', 'Следующее начисление', 'Назначение'], rows);

@@ -206,5 +206,10 @@
 .deposit-detail{padding:4px 2px 8px}.deposit-detail h4{margin:12px 0 4px;font-size:11px;letter-spacing:.06em;text-transform:uppercase}.deposit-facts{display:flex;flex-wrap:wrap;gap:8px 18px;margin-bottom:6px}.deposit-facts div{min-width:140px}.deposit-facts span{display:block;font-size:11px}.deposit-facts b{font-size:13px}.deposit-detail .plus{color:#55e0bd}.deposit-detail .minus{color:#ff9b8a}.deposit-detail .stat-row small{display:block}.deposit-specific{display:contents}.deposit-specific[hidden],.deposit-op-only[hidden]{display:none!important}.deposit-link-note{margin-top:12px}
 .deposit-months{margin-top:16px}
 .deposit-months .section-heading{margin-bottom:8px}
+.deposit-months .stat-row{align-items:center;gap:12px}
+.deposit-months .deposit-month-name{color:#f7fbff;font-weight:700;font-size:15px;letter-spacing:.01em}
+.deposit-months .stat-row strong{white-space:nowrap}
 .deposit-months-total{margin-top:8px;border-top:1px solid #1d4380;padding-top:8px}
+.deposit-next{white-space:nowrap}
+@media(max-width:720px){.deposit-months .deposit-month-name{font-size:14px}.deposit-months .stat-row{gap:8px}}
 @media(max-width:720px){.rent-row{align-items:flex-start;flex-direction:column}}
