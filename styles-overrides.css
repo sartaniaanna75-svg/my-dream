@@ -204,7 +204,27 @@
 .rent-row-actions{display:flex;gap:6px;flex-shrink:0}
 .rent-status{white-space:nowrap}
 .calendar-event em{display:block;font-style:normal;font-size:11px;font-weight:700}
-.deposit-detail{padding:4px 2px 8px}.deposit-detail h4{margin:12px 0 4px;font-size:11px;letter-spacing:.06em;text-transform:uppercase}.deposit-facts{display:flex;flex-wrap:wrap;gap:8px 18px;margin-bottom:6px}.deposit-facts div{min-width:140px}.deposit-facts span{display:block;font-size:11px}.deposit-facts b{font-size:13px}.deposit-detail .plus{color:#55e0bd}.deposit-detail .minus{color:#ff9b8a}.deposit-detail .stat-row small{display:block}.deposit-specific{display:contents}.deposit-specific[hidden],.deposit-op-only[hidden],.account-savings-only[hidden]{display:none!important}.deposit-link-note{margin-top:12px}
+.deposit-detail{padding:4px 2px 8px}.deposit-detail h4{margin:12px 0 4px;font-size:11px;letter-spacing:.06em;text-transform:uppercase}.deposit-facts{display:flex;flex-wrap:wrap;gap:8px 18px;margin-bottom:6px}.deposit-facts div{min-width:140px}.deposit-facts span{display:block;font-size:11px}.deposit-facts b{font-size:13px}.deposit-detail .plus{color:#55e0bd}.deposit-detail .minus{color:#ff9b8a}.deposit-detail .stat-row small{display:block}.deposit-specific{display:contents}.deposit-specific[hidden],.deposit-op-only[hidden],.account-savings-only[hidden],.account-purpose-custom[hidden],.account-purpose-asset[hidden],.account-fx-note[hidden]{display:none!important}
+.account-fx-note{grid-column:1/-1;margin:0;color:#dce8ff;font-size:13px;line-height:1.45}
+.account-list{display:grid;gap:12px}
+.account-row-main{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) auto;gap:14px;align-items:center}
+.account-row-title strong,.account-row-money strong{display:block;color:#fff;font:800 18px Manrope}
+.account-row-title span,.account-row-money span,.account-row-money small{display:block;color:#a9bde2;font-size:13px;margin-top:3px}
+.account-row-money{text-align:right}
+.account-row-money small{color:#ffbd61;font-weight:800}
+.account-details{margin-top:14px;padding-top:12px;border-top:1px solid #1d4380}
+.account-facts,.account-split{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 14px}
+.account-facts span,.account-split span,.account-split small{display:block;color:#9db1d5;font-size:11px}
+.account-facts strong,.account-split strong{display:block;color:#fff;font-size:14px;margin-top:3px}
+.account-split{margin-top:14px}
+.account-split small{margin-top:4px;line-height:1.35}
+.account-history{margin-top:14px}
+.account-history h4{margin:0 0 8px;color:#fff;font-size:13px}
+.account-op{display:grid;grid-template-columns:72px 1.4fr auto;gap:4px 10px;padding:8px 0;border-top:1px solid #1d4380;color:#fff;font-size:13px}
+.account-op small{grid-column:2;color:#9db1d5}
+.account-op-form{display:grid;grid-template-columns:140px 140px 1fr 1fr auto;gap:8px;margin-top:10px}
+.account-op-form input,.account-op-form select{min-width:0}
+@media(max-width:720px){.account-row-main,.account-facts,.account-split,.account-op-form{grid-template-columns:1fr}.account-row-money{text-align:left}.account-more{justify-self:start}}.deposit-link-note{margin-top:12px}
 .deposit-archive{margin-top:16px;padding:0 16px 4px}.deposit-archive summary{padding:14px 0;font-weight:800;cursor:pointer}.deposit-archive[open]{padding-bottom:16px}.deposit-close-total{grid-column:1/-1}.deposit-payout{display:block;font:800 22px Manrope;margin-top:4px}
 .deposit-owner-filter{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:6px 0 8px}.deposit-owner-filter span{color:#9db1d5;font-size:12px}.deposit-owner-filter button{padding:6px 10px;font-size:12px;border-radius:8px}.deposit-owner-filter button.is-active{background:#ffb449!important;border-color:#ffc15c!important;color:#1a2744!important}
 .fx-legacy{display:none!important}

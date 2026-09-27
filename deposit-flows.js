@@ -16,9 +16,93 @@
   }
 
   function accountTitle(account) {
-    const kind = /карт/i.test(account.type || '') ? 'Карта' : 'Счёт';
+    const kind = /карт/i.test(account.type || '') ? 'Карта' : (account.type || 'Счёт');
     return kind + ' ' + (account.bank || '');
   }
+
+  function accountChoiceLabel(account) {
+    const bank = account.bank || 'Счёт';
+    const tail = account.last4 ? '•••• ' + account.last4 : '';
+    const owner = String(account.owner || '').trim();
+    const code = account.currency || 'RUB';
+    return [bank + (tail ? ' ' + tail : ''), owner, code].filter(Boolean).join(' · ');
+  }
+
+  function cabinetRate(code) {
+    if (!code || code === 'RUB') return 1;
+    const cabinet = num(state.fx && state.fx[code]);
+    if (cabinet > 0) return cabinet;
+    if (typeof window.liveRate === 'function') {
+      const rate = window.liveRate(code);
+      if (num(rate) > 0) return num(rate);
+    }
+    return 0;
+  }
+
+  function ratePlain(rate) {
+    if (!(num(rate) > 0)) return '';
+    return new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(num(rate));
+  }
+
+  function accountOriginal(account, amount) {
+    const code = (account && account.currency) || 'RUB';
+    const value = amount == null ? account.balance : amount;
+    if (typeof moneyOriginal === 'function') return moneyOriginal(value, code);
+    return rub(value);
+  }
+
+  function rememberAnchor(account) {
+    const code = (account && account.currency) || 'RUB';
+    const rate = cabinetRate(code);
+    if (rate > 0) account.rateAnchor = rate;
+  }
+
+  function pushAccountMovement(account, movement) {
+    if (!account) return false;
+    if (!Array.isArray(account.movements)) account.movements = [];
+    if (movement.id && account.movements.some(function (item) { return item.id === movement.id; })) return false;
+    const amount = moneyOk(movement.amount);
+    if (!(amount > 0)) return false;
+    const direction = movement.direction === 'out' ? 'out' : 'in';
+    if (direction === 'out' && moneyOk(account.balance) + 0.001 < amount) return false;
+    account.balance = moneyOk(num(account.balance) + (direction === 'out' ? -amount : amount));
+    account.movements.push({
+      id: movement.id || uid(),
+      date: movement.date || isoDate(today),
+      type: movement.type || (direction === 'out' ? 'Списание' : 'Пополнение'),
+      amount: amount,
+      direction: direction,
+      currency: account.currency || 'RUB',
+      comment: movement.comment || '',
+      text: movement.text || movement.comment || movement.type || ''
+    });
+    rememberAnchor(account);
+    return true;
+  }
+
+  window.receiveRentOnAccount = function (asset, payment, accountId) {
+    if (!payment || payment.credited) return;
+    const id = accountId || (asset && asset.rent && asset.rent.accountId) || '';
+    if (!id) return;
+    const account = state.accounts.find(function (item) { return item.id === id; });
+    if (!account) return;
+    const currency = payment.currency || (asset && asset.rent && asset.rent.currency) || (asset && asset.currency) || 'RUB';
+    if ((account.currency || 'RUB') !== currency) {
+      alert('Валюта счёта не совпадает с валютой аренды. Остаток счёта не изменён.');
+      return;
+    }
+    const name = asset && asset.name ? asset.name : 'Объект';
+    const moved = pushAccountMovement(account, {
+      id: 'rent-' + payment.id,
+      date: payment.receivedAt || isoDate(today),
+      type: 'Аренда',
+      amount: num(payment.amount),
+      direction: 'in',
+      comment: name,
+      text: 'Аренда — ' + name
+    });
+    if (moved) payment.credited = true;
+  };
 
   function obligationChoices() {
     return obligations().map(function (item) {
@@ -96,6 +180,7 @@
     if (type === 'transfer-in' || type === 'transfer-out' || (type === 'close' && draft.accountId)) {
       account = state.accounts.find(function (item) { return item.id === draft.accountId; });
       if (!account) { alert(type === 'close' ? 'Выберите, куда вывести вклад.' : 'Выберите карту или счёт.'); return false; }
+      if ((account.currency || 'RUB') !== 'RUB') { alert('Вклад в рублях можно перевести только на рублёвый счёт.'); return false; }
       if (type === 'transfer-in' && moneyOk(account.balance) + 0.001 < amount) { alert('На карте или счёте недостаточно средств.'); return false; }
     }
     if (type === 'pay') {
@@ -113,7 +198,7 @@
     if (account) {
       if (!Array.isArray(account.movements)) account.movements = [];
       if (!account.movements.some(function (item) { return item.id === draft.id; })) {
-        account.movements.push({ id: draft.id, date: draft.date, amount: amount, text: text, direction: type === 'transfer-in' ? 'out' : 'in', depositId: deposit.id });
+        account.movements.push({ id: draft.id, date: draft.date, amount: amount, text: text, type: type === 'transfer-in' ? 'Перевод' : 'Пополнение', direction: type === 'transfer-in' ? 'out' : 'in', currency: account.currency || 'RUB', comment: text, depositId: deposit.id });
       }
     }
     if (type === 'pay') {
@@ -230,9 +315,7 @@
   }
 
   function accountDestinationText(account) {
-    const owner = String(account.owner || '').trim() || '—';
-    const tail = account.last4 ? '•••• ' + account.last4 : 'без номера';
-    return (account.bank || '—') + ' · ' + owner + ' · ' + tail + ' · ' + rub(account.balance);
+    return accountChoiceLabel(account) + ' · ' + accountOriginal(account);
   }
 
   function accountOption(account) {
@@ -349,7 +432,7 @@
     const deposit = state.deposits.find(function (item) { return item.id === depositId; });
     if (!deposit) return;
     const accounts = state.accounts.map(function (account) {
-      return '<option value="' + esc(account.id) + '">' + esc(accountTitle(account) + ' · ' + rub(account.balance)) + '</option>';
+      return '<option value="' + esc(account.id) + '">' + esc(accountChoiceLabel(account) + ' · ' + accountOriginal(account)) + '</option>';
     }).join('');
     const obligationsHtml = obligationChoices().map(function (item) {
       return '<option value="' + esc(item.kind + '|' + item.id) + '">' + esc(item.label + ' · осталось ' + rub(item.remaining)) + '</option>';
@@ -423,14 +506,120 @@
     };
   }
 
+  const ACCOUNT_PURPOSES = ['Личные средства', 'Доход от аренды', 'Для обязательств', 'Накопления', 'Другое'];
+
+  function accountPurposeFields(record) {
+    const stored = record && record.purpose ? record.purpose : 'Личные средства';
+    const known = ACCOUNT_PURPOSES.indexOf(stored) >= 0;
+    const selected = known ? stored : 'Другое';
+    const custom = known ? '' : stored;
+    const options = ACCOUNT_PURPOSES.map(function (item) {
+      return '<option value="' + esc(item) + '"' + (item === selected ? ' selected' : '') + '>' + esc(item) + '</option>';
+    }).join('');
+    const assetId = record && record.linkedAssetId || '';
+    const assets = (state.assets || []).map(function (asset) {
+      const place = asset.description ? ' — ' + asset.description : '';
+      return '<option value="' + esc(asset.id) + '"' + (asset.id === assetId ? ' selected' : '') + '>' + esc((asset.name || 'Объект') + place) + '</option>';
+    }).join('');
+    return '<div class="form-field"><label>Назначение счёта</label><select name="accountPurpose">' + options + '</select></div><div class="form-field account-purpose-custom"' + (selected === 'Другое' ? '' : ' hidden') + '><label>Своё назначение</label><input name="accountPurposeCustom" value="' + esc(custom) + '"></div><div class="form-field account-purpose-asset"' + (selected === 'Доход от аренды' ? '' : ' hidden') + '><label>Объект</label><select name="linkedAssetId"><option value="">Выберите объект</option>' + assets + '</select></div><p class="account-fx-note" hidden></p>';
+  }
+
+  function attachAccountCurrency(form, id) {
+    const grid = form.querySelector('.form-grid');
+    if (!grid || grid.querySelector('[name="currency"]')) return;
+    const record = id ? state.accounts.find(function (item) { return item.id === id; }) : null;
+    const code = (record && record.currency) || 'RUB';
+    const last4 = grid.querySelector('[name="last4"]');
+    const last4Field = last4 && last4.closest('.form-field');
+    const currencyHtml = '<div class="form-field"><label>Валюта счёта</label><select name="currency" data-currency-catalog="1"><option>' + esc(code) + '</option></select></div>';
+    if (last4Field) last4Field.insertAdjacentHTML('afterend', currencyHtml);
+    else grid.insertAdjacentHTML('beforeend', currencyHtml);
+    const balance = grid.querySelector('[name="balance"]');
+    const balanceField = balance && balance.closest('.form-field');
+    if (balanceField) balanceField.insertAdjacentHTML('afterend', accountPurposeFields(record));
+    else grid.insertAdjacentHTML('beforeend', accountPurposeFields(record));
+    const select = grid.querySelector('[name="currency"]');
+    if (window.attachCurrencyPicker) window.attachCurrencyPicker(select, { allowRub: true });
+    const note = grid.querySelector('.account-fx-note');
+    const purpose = grid.querySelector('[name="accountPurpose"]');
+    const custom = grid.querySelector('.account-purpose-custom');
+    const assetWrap = grid.querySelector('.account-purpose-asset');
+    const syncPurpose = function () {
+      custom.hidden = purpose.value !== 'Другое';
+      assetWrap.hidden = purpose.value !== 'Доход от аренды';
+    };
+    const syncRate = function () {
+      const chosen = select.value || 'RUB';
+      const foreign = chosen && chosen !== 'RUB' && chosen !== '__OTHER__' && chosen !== '__ADD__';
+      note.hidden = !foreign;
+      if (!foreign) { note.textContent = ''; return; }
+      const amount = num(balance && balance.value);
+      const rate = cabinetRate(chosen);
+      note.textContent = rate > 0
+        ? 'Текущий курс: 1 ' + chosen + ' = ' + ratePlain(rate) + ' ₽. Рублёвый эквивалент: ' + rub(roundMoney(amount * rate)) + '.'
+        : 'Текущий курс ' + chosen + ' не задан. Укажите его в Настройках → Курсы валют.';
+    };
+    purpose.addEventListener('change', syncPurpose);
+    select.addEventListener('change', syncRate);
+    if (balance) balance.addEventListener('input', syncRate);
+    syncPurpose();
+    syncRate();
+    const previousSubmit = form.onsubmit;
+    form.onsubmit = function (event) {
+      if (!String(form.elements.owner && form.elements.owner.value || '').trim()) { event.preventDefault(); alert('Укажите владельца счёта.'); return; }
+      if (window.currencyReady && !window.currencyReady(select)) { event.preventDefault(); alert('Выберите валюту.'); return; }
+      const chosen = select.value || 'RUB';
+      const purposeValue = purpose.value === 'Другое' ? (String(grid.querySelector('[name="accountPurposeCustom"]').value || '').trim() || 'Другое') : purpose.value;
+      const linked = purpose.value === 'Доход от аренды' ? grid.querySelector('[name="linkedAssetId"]').value : '';
+      if (purpose.value === 'Доход от аренды' && !linked) { event.preventDefault(); alert('Выберите объект, с которого поступает аренда.'); return; }
+      const previous = id ? state.accounts.find(function (item) { return item.id === id; }) : null;
+      const oldBalance = previous ? num(previous.balance) : null;
+      const oldCurrency = previous ? (previous.currency || 'RUB') : chosen;
+      const oldMovements = previous && previous.movements ? previous.movements.map(function (item) { return Object.assign({}, item); }) : [];
+      const before = state.accounts.map(function (item) { return item.id; });
+      if (previousSubmit) previousSubmit.call(form, event);
+      const saved = id
+        ? state.accounts.find(function (item) { return item.id === id; })
+        : state.accounts.filter(function (item) { return before.indexOf(item.id) < 0; })[0];
+      if (!saved) return;
+      saved.currency = chosen;
+      saved.purpose = purposeValue;
+      saved.linkedAssetId = linked;
+      delete saved.accountPurpose;
+      delete saved.accountPurposeCustom;
+      saved.movements = oldMovements;
+      if (previous && previous.fxRate != null && previous.fxRate !== '') saved.fxRate = previous.fxRate;
+      const nextBalance = num(saved.balance);
+      const balanceChanged = previous && oldCurrency === chosen && Math.abs(nextBalance - oldBalance) > 0.009;
+      if (balanceChanged) {
+        const delta = moneyOk(nextBalance - oldBalance);
+        saved.movements.push({
+          id: uid(),
+          date: isoDate(today),
+          type: delta > 0 ? 'Пополнение' : 'Списание',
+          amount: Math.abs(delta),
+          direction: delta > 0 ? 'in' : 'out',
+          currency: chosen,
+          comment: 'Изменение остатка',
+          text: 'Изменение остатка'
+        });
+        rememberAnchor(saved);
+      } else if (previous && oldCurrency === chosen && num(previous.rateAnchor) > 0) saved.rateAnchor = previous.rateAnchor;
+      else rememberAnchor(saved);
+      save();
+      render();
+    };
+  }
+
   function attachRecordCurrency(form, type, id) {
+    if (type === 'account') { attachAccountCurrency(form, id); return; }
     const grid = form.querySelector('.form-grid');
     if (!grid || grid.querySelector('[name="currency"]')) return;
     const list = state[type + 's'] || [];
     const record = id ? list.find(function (item) { return item.id === id; }) : null;
     const code = (record && record.currency) || 'RUB';
     const rate = record && record.fxRate != null && record.fxRate !== '' ? String(record.fxRate).replace('.', ',') : '';
-    const amountName = type === 'account' ? 'balance' : 'total';
+    const amountName = 'total';
     grid.insertAdjacentHTML('beforeend', '<div class="form-field"><label>Валюта</label><select name="currency" data-currency-catalog="1"><option>' + esc(code) + '</option></select></div><div class="form-field record-fx-rate"' + (code === 'RUB' ? ' hidden' : '') + '><label>Курс к рублю</label><input name="fxRate" inputmode="decimal" autocomplete="off" value="' + esc(rate) + '"></div><p class="record-fx-eq"' + (code === 'RUB' ? ' hidden' : '') + '></p>');
     const select = grid.querySelector('[name="currency"]');
     if (window.attachCurrencyPicker) window.attachCurrencyPicker(select, { allowRub: true });
@@ -558,6 +747,102 @@
       return html.replace('</article>', note + '</article>');
     };
   }
+
+  function accountPurposeLine(account) {
+    const purpose = account.purpose || 'Личные средства';
+    if (purpose === 'Доход от аренды') {
+      const asset = (state.assets || []).find(function (item) { return item.id === account.linkedAssetId; });
+      return asset ? 'Аренда · ' + asset.name : 'Доход от аренды';
+    }
+    return purpose;
+  }
+
+  function accountRevalue(account) {
+    const code = account.currency || 'RUB';
+    if (code === 'RUB') return 0;
+    const rate = cabinetRate(code);
+    const anchor = num(account.rateAnchor);
+    if (!(rate > 0) || !(anchor > 0)) return null;
+    return moneyOk(num(account.balance) * rate) - moneyOk(num(account.balance) * anchor);
+  }
+
+  function signedMoney(amount, currency) {
+    const text = typeof moneyOriginal === 'function' ? moneyOriginal(Math.abs(amount), currency || 'RUB') : rub(Math.abs(amount));
+    if (amount > 0) return '+' + text;
+    if (amount < 0) return '−' + text;
+    return text;
+  }
+
+  function accountDetails(account) {
+    const code = account.currency || 'RUB';
+    const foreign = code !== 'RUB';
+    const rate = cabinetRate(code);
+    const equivalent = foreign ? (rate > 0 ? rub(accountRub(account)) : 'курс не задан') : '';
+    const asset = (state.assets || []).find(function (item) { return item.id === account.linkedAssetId; });
+    const receipts = (account.movements || []).filter(function (item) { return item.direction !== 'out'; }).reduce(function (sum, item) { return sum + num(item.amount); }, 0);
+    const revalue = accountRevalue(account);
+    const revalueText = !foreign ? '' : (revalue == null ? 'курс не задан' : signedMoney(revalue, 'RUB'));
+    const facts = [
+      ['Банк', account.bank || '—'],
+      ['Тип', account.type || 'Карта'],
+      ['Владелец', account.owner || '—'],
+      ['Последние 4 цифры', account.last4 ? '•••• ' + account.last4 : '—'],
+      ['Валюта', typeof currencyTitle === 'function' ? currencyTitle(code) : code],
+      ['Текущий остаток', accountOriginal(account)],
+      foreign ? ['Текущий курс', rate > 0 ? '1 ' + code + ' = ' + ratePlain(rate) + ' ₽' : 'не задан в Настройках'] : null,
+      foreign ? ['Рублёвый эквивалент', equivalent] : null,
+      ['Назначение', account.purpose || 'Личные средства'],
+      asset ? ['Связанный объект', asset.name + (asset.description ? ' — ' + asset.description : '')] : null,
+      ['Для покрытия обязательств', account.coverObligations === false ? 'Нет' : 'Да'],
+      account.comment ? ['Комментарий', account.comment] : null
+    ].filter(Boolean);
+    const history = (account.movements || []).slice().sort(function (a, b) { return String(b.date || '').localeCompare(String(a.date || '')); });
+    const rows = history.map(function (item) {
+      const sign = item.direction === 'out' ? -num(item.amount) : num(item.amount);
+      const title = item.text || item.type || 'Операция';
+      return '<div class="account-op"><span>' + esc(dateText(item.date)) + '</span><strong>' + esc(title) + '</strong><b>' + esc(signedMoney(sign, item.currency || code)) + '</b><small>' + esc(item.comment && item.comment !== title ? item.comment : '') + '</small></div>';
+    }).join('');
+    return '<div class="account-facts">' + facts.map(function (row) { return '<div><span>' + esc(row[0]) + '</span><strong>' + esc(row[1]) + '</strong></div>'; }).join('') + '</div><div class="account-split"><div><span>Фактические поступления</span><strong>' + esc(accountOriginal(account, receipts)) + '</strong><small>Подтверждённые операции по счёту</small></div>' + (foreign ? '<div><span>Валютная переоценка</span><strong>' + esc(revalueText) + '</strong><small>Это не поступление и не доход. Остаток в ' + esc(code) + ' не меняется.</small></div>' : '') + '</div><div class="account-history"><h4>Операции</h4>' + (rows || '<p class="muted">Операций пока нет. Изменение курса сюда не записывается.</p>') + '<div class="account-op-form"><input type="date" data-op="date" value="' + isoDate(today) + '"><select data-op="type"><option>Пополнение</option><option>Списание</option><option>Перевод</option></select><input data-op="amount" inputmode="decimal" placeholder="Сумма"><input data-op="comment" placeholder="Комментарий"><button type="button" class="ghost-button" onclick="addAccountMovement(\'' + account.id + '\', this)">Добавить</button></div></div>';
+  }
+
+  function accountCards() {
+    const total = state.accounts.reduce(function (sum, account) { return sum + accountRub(account); }, 0);
+    const cards = state.accounts.map(function (account) {
+      const code = account.currency || 'RUB';
+      const foreign = code !== 'RUB';
+      const rate = cabinetRate(code);
+      const equivalent = foreign ? (rate > 0 ? '≈ ' + rub(accountRub(account)) : 'курс не задан') : '';
+      return '<article class="account-row panel"><div class="account-row-main"><div class="account-row-title"><strong>' + esc(account.bank || 'Счёт') + '</strong><span>' + esc(account.type || 'Карта') + (account.last4 ? ' · •••• ' + esc(account.last4) : '') + '</span><span>' + esc(account.owner || '—') + '</span></div><div class="account-row-money"><strong>' + esc(accountOriginal(account)) + '</strong>' + (equivalent ? '<small>' + esc(equivalent) + '</small>' : '') + '<span>' + esc(accountPurposeLine(account)) + '</span></div><button type="button" class="ghost-button account-more" onclick="toggleAccountDetails(\'' + account.id + '\', this)">Подробнее</button></div><div class="account-details" id="account-details-' + account.id + '" hidden>' + accountDetails(account) + '<div class="button-row">' + actions('account', account.id) + '</div></div></article>';
+    }).join('');
+    return '<div class="view-wrap"><div class="section-heading"><div><p class="eyebrow">УПРАВЛЕНИЕ ДАННЫМИ</p><h2>Карты и счета</h2><p>Всего в рублях: ' + rub(total) + '</p></div><button class="primary-button" onclick="openForm(\'account\')">＋ Добавить счёт</button></div><div class="account-list">' + (cards || '<div class="panel empty">Нет записей. Добавьте первую запись.</div>') + '</div></div>';
+  }
+  accounts = accountCards;
+
+  window.toggleAccountDetails = function (id, button) {
+    const panel = document.getElementById('account-details-' + id);
+    if (!panel) return;
+    panel.hidden = !panel.hidden;
+    if (button) button.textContent = panel.hidden ? 'Подробнее' : 'Скрыть';
+  };
+
+  window.addAccountMovement = function (id, button) {
+    const account = state.accounts.find(function (item) { return item.id === id; });
+    const form = button && button.closest('.account-op-form');
+    if (!account || !form) return;
+    const kind = form.querySelector('[data-op="type"]').value;
+    const amount = num(form.querySelector('[data-op="amount"]').value);
+    const date = form.querySelector('[data-op="date"]').value;
+    const comment = form.querySelector('[data-op="comment"]').value.trim();
+    if (!date) { alert('Укажите дату операции.'); return; }
+    if (!(amount > 0)) { alert('Укажите сумму больше нуля.'); return; }
+    const out = kind === 'Списание' || kind === 'Перевод';
+    const moved = pushAccountMovement(account, { date: date, type: kind, amount: amount, direction: out ? 'out' : 'in', comment: comment, text: comment ? kind + ' — ' + comment : kind });
+    if (!moved) { alert('На счёте недостаточно средств.'); return; }
+    save();
+    render();
+    const panel = document.getElementById('account-details-' + id);
+    if (panel) panel.hidden = false;
+  };
 
   if (typeof activeView !== 'undefined' && activeView === 'deposits') render();
 })();

@@ -61,9 +61,19 @@
       type: get('type') || 'Другое', owner: get('owner') || '', currency: get('currency') || 'RUB', acquisition: get('acquisition') || get('purchase') || '', usageStatus: get('usageStatus') || 'Оплачиваю', initialRate: num(get('initialRate')), currentRate: num(get('currentRate')), rateMode: get('rateMode') || 'Ручной',
       photos: photos, plannedRent: get('usageStatus') === 'Сдаётся в аренду' || get('usageStatus') === 'Планируется сдача в аренду', rent: {
         planned: checked('plannedRent'), amount: num(get('rentAmount')), currency: get('rentCurrency') || get('currency') || 'RUB', periodicity: get('rentPeriodicity') || 'Месяц', startDate: get('rentStartDate') || '', comment: get('rentComment') || '',
-        tenant: get('tenant') || '', nextDate: get('rentNextDate') || '', contractStart: get('contractStart') || '', contractEnd: get('contractEnd') || '', deposit: num(get('rentDeposit')), indexation: num(get('rentIndexation'))
+        tenant: get('tenant') || '', nextDate: get('rentNextDate') || '', contractStart: get('contractStart') || '', contractEnd: get('contractEnd') || '', deposit: num(get('rentDeposit')), indexation: num(get('rentIndexation')), accountId: get('rentAccountId') || ''
       }
     };
+  }
+
+  function rentAccountOptions(selected) {
+    const rows = (state.accounts || []).map(function (account) {
+      const tail = account.last4 ? ' •••• ' + account.last4 : '';
+      const owner = account.owner ? ' · ' + account.owner : '';
+      const label = (account.bank || 'Счёт') + tail + owner + ' · ' + (account.currency || 'RUB');
+      return '<option value="' + esc(account.id) + '"' + (account.id === selected ? ' selected' : '') + '>' + esc(label) + '</option>';
+    }).join('');
+    return '<option value="">Не выбран</option>' + rows;
   }
 
   function optionList(items, current) {
@@ -84,6 +94,7 @@
       '<div class="rental-fields"><div class="form-field rent-any"><label>Сумма аренды</label><input name="rentAmount" inputmode="decimal" value="' + (rent.amount || '') + '"></div>' +
       '<div class="form-field rent-any"><label>Дата начала дохода / очередного платежа</label><input name="rentNextDate" type="date" value="' + (rent.nextDate || rent.startDate || '') + '"></div>' +
       '<div class="form-field rent-live"><label>Валюта аренды</label><select name="rentCurrency" data-currency-catalog="1"><option>' + esc(rent.currency || asset.currency || 'RUB') + '</option></select></div>' +
+      '<div class="form-field rent-live"><label>Куда поступает аренда</label><select name="rentAccountId">' + rentAccountOptions(rent.accountId || '') + '</select></div>' +
       '<div class="form-field rent-live"><label>Периодичность</label><select name="rentPeriodicity">' + optionList(periods, rent.periodicity || 'Месяц') + '</select></div>' +
       '<div class="form-field rent-live"><label>Арендатор</label><input name="tenant" value="' + (rent.tenant || '') + '"></div>' +
       '<div class="form-field rent-live"><label>Дата начала договора</label><input name="contractStart" type="date" value="' + (rent.contractStart || '') + '"></div>' +
@@ -322,6 +333,7 @@
     const phone = part ? (part.rentPhone || '') : (rent.phone || '');
     const comment = part ? (part.comment || '') : (rent.comment || '');
     const currencyOptions = '<option selected>' + esc(currency || 'RUB') + '</option>';
+    const accountSelected = part ? (part.rentAccountId || '') : ((asset.rent && asset.rent.accountId) || '');
     const periodOptions = periods.map(function (item) { return '<option ' + (item === period ? 'selected' : '') + '>' + item + '</option>'; }).join('');
     const field = function (label, html) { return '<div class="form-field"><label>' + label + '</label>' + html + '</div>'; };
     document.getElementById('modal-root').innerHTML = '<div class="modal-backdrop" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-header"><h2>Сдано в аренду</h2><button type="button" class="close" onclick="closeModal()">×</button></div><form id="rent-lease-form"><div class="modal-body"><div class="form-grid">' +
@@ -333,6 +345,7 @@
       field('Дата окончания договора', '<input name="end" type="date" value="' + esc(end) + '">') +
       field('Периодичность платежа', '<select name="period">' + periodOptions + '</select>') +
       field('Дата следующего платежа', '<input name="next" type="date" value="' + esc(next) + '">') +
+      field('Куда поступает аренда', '<select name="accountId">' + rentAccountOptions(accountSelected) + '</select>') +
       field('Комментарий', '<input name="comment" value="' + esc(comment) + '">') +
       '</div></div><div class="modal-footer"><button type="button" class="ghost-button" onclick="closeModal()">Отмена</button><button class="primary-button">Сохранить</button></div></form></div></div>';
     document.getElementById('rent-lease-form').onsubmit = function (event) {
@@ -350,6 +363,7 @@
         part.rentEnd = form.elements.end.value;
         part.rentPeriod = form.elements.period.value;
         part.rentNext = form.elements.next.value || form.elements.start.value;
+        part.rentAccountId = form.elements.accountId.value;
         part.comment = form.elements.comment.value.trim();
         ensurePartRentPayments(part);
       } else {
@@ -366,6 +380,7 @@
           periodicity: form.elements.period.value,
           nextDate: form.elements.next.value || form.elements.start.value,
           comment: form.elements.comment.value.trim(),
+          accountId: form.elements.accountId.value,
           planned: true
         });
         ensureRentalPayments(asset);
@@ -383,13 +398,17 @@
       const part = (asset.parts || []).find(function (item) { return item.id === partId; });
       const payment = part && (part.rentPayments || []).find(function (item) { return item.id === paymentId; });
       if (!payment) return;
+      if (!payment.currency) payment.currency = part.rentCurrency || 'RUB';
       payment.status = 'Получено';
       payment.receivedAt = isoDate(today);
+      if (typeof receiveRentOnAccount === 'function') receiveRentOnAccount(asset, payment, part.rentAccountId || (asset.rent && asset.rent.accountId));
     } else if (asset.rent && Array.isArray(asset.rent.payments)) {
       const payment = asset.rent.payments.find(function (item) { return item.id === paymentId; });
       if (!payment) return;
+      if (!payment.currency) payment.currency = asset.rent.currency || asset.currency || 'RUB';
       payment.status = 'Получено';
       payment.receivedAt = isoDate(today);
+      if (typeof receiveRentOnAccount === 'function') receiveRentOnAccount(asset, payment, asset.rent.accountId);
     } else return;
     save();
     render();
@@ -435,7 +454,14 @@
   function markRentalReceived(assetId, paymentId) {
     const asset = state.assets.find(function (item) { return item.id === assetId; });
     const payment = asset && asset.rent && asset.rent.payments.find(function (item) { return item.id === paymentId; });
-    if (payment) { payment.status = 'Получено'; payment.receivedAt = isoDate(today); save(); render(); }
+    if (payment) {
+      if (!payment.currency) payment.currency = asset.rent.currency || asset.currency || 'RUB';
+      payment.status = 'Получено';
+      payment.receivedAt = isoDate(today);
+      if (typeof receiveRentOnAccount === 'function') receiveRentOnAccount(asset, payment, asset.rent.accountId);
+      save();
+      render();
+    }
   }
   window.markRentalReceived = markRentalReceived;
 
