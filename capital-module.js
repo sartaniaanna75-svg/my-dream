@@ -376,18 +376,35 @@
     return [{ code: 'USD', title: 'Доллар США' }, { code: 'EUR', title: 'Евро' }, { code: 'AED', title: 'Дирхам ОАЭ' }, { code: 'CNY', title: 'Китайский юань' }, { code: 'GBP', title: 'Фунт стерлингов' }, { code: 'TRY', title: 'Турецкая лира' }, { code: 'CHF', title: 'Швейцарский франк' }, { code: 'JPY', title: 'Японская иена' }];
   }
 
+  function fxNowStamp() {
+    const now = new Date();
+    const date = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+    const time = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+    return { date: date, time: time };
+  }
+
+  function fxStatusHtml(fx) {
+    if (fx.updateFailed) return 'Не удалось обновить курсы. Используются последние сохранённые значения.';
+    const date = fx.updated || '';
+    const stamp = date && typeof fullDate === 'function' ? fullDate(date) : date;
+    if (!stamp || stamp === '—') return 'Последнее обновление: ещё не было. Кнопка «Обновить курс» запрашивает курсы ЦБ РФ. Если связи нет, остаются последние сохранённые значения.';
+    const when = fx.updatedTime ? stamp + ', ' + esc(fx.updatedTime) : stamp;
+    const source = fx.source ? ' · ' + esc(fx.source) : '';
+    const head = 'Последнее обновление: ' + when + source + '.';
+    if (fx.source === 'ЦБ РФ' && fx.skipped) return head + '<br>Не найдены в курсе ЦБ: ' + esc(fx.skipped) + '.<br>Для них сохранены предыдущие значения.';
+    if (fx.source === 'ЦБ РФ') return head + ' Все доступные курсы обновлены.';
+    return head;
+  }
+
   const baseSettings = settings;
   settings = function () {
     ensureCapitalState();
     const fx = state.fx;
-    const updated = fx.rateDate || fx.updated;
-    const source = fx.source ? ' · ' + esc(fx.source) : '';
-    const skipped = fx.skipped ? ' Не найдены в курсе ЦБ: ' + esc(fx.skipped) + '.' : '';
     const rows = fxCatalog().map(function (item) {
       const legacy = item.code === 'USD' ? ' name="fx-usd"' : item.code === 'EUR' ? ' name="fx-eur"' : '';
       return '<label><span class="fx-name">' + esc(item.code + ' — ' + (item.title || item.code)) + '</span><input data-fx-code="' + esc(item.code) + '"' + legacy + ' inputmode="decimal" value="' + esc(rateInput(fx[item.code])) + '"><span class="fx-unit">₽</span></label>';
     }).join('');
-    const panel = '<div class="view-wrap"><div class="panel fx-panel"><div class="section-heading"><div><p class="eyebrow">ВАЛЮТА</p><h3>Курсы валют</h3><p>Суммы в иностранной валюте не меняются. Текущий рублёвый эквивалент считается по этим курсам. Курс уже проведённой операции остаётся в её истории.</p></div></div><div class="fx-grid">' + rows + '</div><div class="form-field fx-mode"><label>Режим курса</label><select id="fx-mode"><option ' + (fx.mode !== 'Автоматический' ? 'selected' : '') + '>Ручной</option><option ' + (fx.mode === 'Автоматический' ? 'selected' : '') + '>Автоматический</option></select></div><div class="button-row"><button class="primary-button" type="button" onclick="refreshOfficialRates()">Обновить курс</button><button class="ghost-button" type="button" onclick="saveManualRates()">Сохранить курс</button></div><p class="muted fx-status">Последнее обновление: ' + (updated ? dateText(updated) : 'ещё не было') + source + '.' + skipped + ' Кнопка «Обновить курс» запрашивает курсы ЦБ РФ. Если связи нет, остаются последние сохранённые значения.</p></div></div>';
+    const panel = '<div class="view-wrap"><div class="panel fx-panel"><div class="section-heading"><div><p class="eyebrow">ВАЛЮТА</p><h3>Курсы валют</h3><p>Суммы в иностранной валюте не меняются. Текущий рублёвый эквивалент считается по этим курсам. Курс уже проведённой операции остаётся в её истории.</p></div></div><div class="fx-grid">' + rows + '</div><div class="form-field fx-mode"><label>Режим курса</label><select id="fx-mode"><option ' + (fx.mode !== 'Автоматический' ? 'selected' : '') + '>Ручной</option><option ' + (fx.mode === 'Автоматический' ? 'selected' : '') + '>Автоматический</option></select></div><div class="button-row"><button class="primary-button" type="button" onclick="refreshOfficialRates()">Обновить курс</button><button class="ghost-button" type="button" onclick="saveManualRates()">Сохранить курс</button></div><p class="muted fx-status">' + fxStatusHtml(fx) + '</p></div></div>';
     return baseSettings() + panel;
   };
 
@@ -407,11 +424,14 @@
       const raw = values.rates[code];
       state.fx[code] = String(raw || '').trim() === '' ? '' : num(raw);
     });
+    const stamp = fxNowStamp();
     state.fx.mode = values.mode;
     state.fx.source = 'Вручную';
-    state.fx.updated = isoDate(today);
-    state.fx.rateDate = isoDate(today);
+    state.fx.updated = stamp.date;
+    state.fx.updatedTime = stamp.time;
+    state.fx.rateDate = stamp.date;
     state.fx.skipped = '';
+    state.fx.updateFailed = false;
     save();
     render();
   };
@@ -435,16 +455,21 @@
         updated += 1;
       });
       if (!updated) throw new Error('payload');
-      next.updated = isoDate(today);
+      const stamp = fxNowStamp();
+      next.updated = stamp.date;
+      next.updatedTime = stamp.time;
       next.rateDate = String(data.Date || '').slice(0, 10);
       next.source = 'ЦБ РФ';
       next.skipped = missing.join(', ');
+      next.updateFailed = false;
       state.fx = next;
       save();
       render();
     } catch (error) {
-      if (button) button.disabled = false;
-      if (!silent) alert('Не удалось обновить курсы. Проверьте интернет или введите курс вручную. Сохранённые курсы не изменены.');
+      state.fx.updateFailed = true;
+      save();
+      if (activeView === 'settings') render();
+      else if (button) button.disabled = false;
     }
   };
 
