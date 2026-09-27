@@ -1044,6 +1044,7 @@
       document.getElementById('deposit-count').textContent = state.deposits.filter(function (item) { return !item.closed; }).length;
       document.getElementById('debt-count').textContent = obligations().length;
       document.getElementById('today-label').textContent = dateText(isoDate(today));
+      if (typeof updateCalendarAlert === 'function') updateCalendarAlert();
       return;
     }
     baseRender();
@@ -1051,6 +1052,7 @@
       applyReferenceDashboard();
       if (typeof refreshRentalSummary === 'function') refreshRentalSummary();
     }
+    if (typeof updateCalendarAlert === 'function') updateCalendarAlert();
   };
 
   function usableForObligations(item) {

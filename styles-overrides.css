@@ -257,3 +257,26 @@ select.fx-currency-store{display:none!important}
 .deposit-next{white-space:nowrap}
 @media(max-width:720px){.deposit-months .deposit-month-name{font-size:14px}.deposit-months .stat-row{gap:8px}}
 @media(max-width:720px){.rent-row{align-items:flex-start;flex-direction:column}}
+.dash-event{cursor:pointer;align-items:flex-start}
+.dash-event-title{display:flex;flex-direction:column;gap:2px;min-width:0;white-space:normal}
+.dash-event-title b{font-size:13px;color:#fff}
+.dash-event-title span,.dash-event-title small,.dash-event-title em{display:block;font-style:normal;font-weight:650;font-size:12px;color:#d5e4ff;white-space:normal}
+.dash-event strong small{display:block;margin-top:2px;font-size:12px;font-weight:700;color:#ffd7a8}
+.dash-event.is-soon{box-shadow:inset 3px 0 0 #ffb449}
+.dash-event.is-today{box-shadow:inset 3px 0 0 #ff7a45}
+.dash-event.is-overdue{box-shadow:inset 3px 0 0 #ff6b6b}
+.calendar-event{cursor:pointer}
+.calendar-event small{display:block;font-size:9px;font-weight:800;white-space:nowrap}
+.calendar-event.cal-soon{background:#ffe7c2!important;color:#8a4b00!important;border-color:#e0a04a!important}
+.calendar-event.cal-today{background:#ffd09a!important;color:#7a3200!important;border-color:#e07a20!important}
+.calendar-event.cal-overdue,.calendar-event-overdue{background:#c92f3e!important;color:#fff!important;border-color:#9d1726!important}
+.nav-count.nav-alert{background:#c92f3e!important;color:#fff!important;min-width:18px;text-align:center}
+.nav-count.nav-alert[hidden]{display:none!important}
+.calendar-detail-body p{margin:0 0 8px;color:#eaf1ff;font-size:16px;line-height:1.35}
+.calendar-detail-body p:first-child{font:800 20px Manrope,sans-serif;color:#fff}
+.modal.modal-asset{width:min(780px,100%);overflow-x:hidden;overflow-y:auto}
+@media(min-width:721px){.modal.modal-asset .form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.modal.modal-asset .modal-body,.modal.modal-asset .form-grid,.modal.modal-asset .form-field,.modal.modal-asset .payment-section,.modal.modal-asset .payment-plan,.modal.modal-asset .fx-calc,.modal.modal-asset .fx-other-currency,.modal.modal-asset .fx-pay-panel,.modal.modal-asset .fx-history,.modal.modal-asset .fx-pay-grid,.modal.modal-asset .fx-currency-add{min-width:0;max-width:100%}
+.modal.modal-asset .form-field input,.modal.modal-asset .form-field select,.modal.modal-asset .form-field textarea,.modal.modal-asset .form-field>.fx-currency-main{width:100%;min-width:0;max-width:100%}
+.modal.modal-asset .payment-plan .fx-currency-main{width:148px;max-width:100%;flex:0 1 148px;min-width:0}
+@media(max-width:720px){.modal.modal-asset{width:100%}.modal.modal-asset .form-grid{grid-template-columns:minmax(0,1fr)}.modal.modal-asset .fx-currency-add{grid-template-columns:minmax(0,1fr)}.modal.modal-asset .payment-plan .pay-date,.modal.modal-asset .payment-plan .pay-amount,.modal.modal-asset .payment-plan .pay-status,.modal.modal-asset .payment-plan .fx-currency-main{flex:1 1 120px;width:auto;min-width:0;max-width:100%}}
