@@ -519,10 +519,11 @@
     const currencies = ['RUB', 'USD', 'EUR'].map(function (item) {
       return '<option ' + (currency === item ? 'selected' : '') + '>' + item + '</option>';
     }).join('');
-    const planCurrency = currency === 'RUB' ? formCurrency() : currency;
     const storedPlan = payment.planRate != null && payment.planRate !== '' && num(payment.planRate) > 0 ? num(payment.planRate) : 0;
-    const shownPlan = storedPlan || liveRate(planCurrency) || 0;
-    return '<div class="payment-row payment-plan"><input name="payment-id" type="hidden" value="' + esc(payment.id || '') + '"><label>Плановая дата<input name="payment-date" type="date" value="' + esc(payment.date || '') + '"></label><label>Плановая сумма<input name="payment-amount" inputmode="decimal" value="' + esc(payment.amount ?? '') + '"></label><label class="payment-currency-field">Валюта<select name="payment-currency">' + currencies + '</select></label><label>Статус<select name="payment-status">' + options + '</select></label><label class="payment-plan-field">Курс для расчёта<input name="payment-plan-rate" inputmode="decimal" value="' + esc(shownPlan ? formatDecimal(shownPlan) : '') + '"><small>Общий курс программы подставляется сам. Другое число сохранится только для этого платежа.</small></label><div class="payment-fact"><label>Фактическая дата<input name="payment-paid-date" type="date" value="' + esc(payment.paidDate || '') + '"></label><label>Оплачено<input name="payment-paid-amount" inputmode="decimal" value="' + esc(payment.paidAmount ?? '') + '"></label><label class="payment-rate-field">Курс оплаты<input name="payment-rate" inputmode="decimal" value="' + esc(payment.payRate != null && payment.payRate !== '' ? formatDecimal(payment.payRate) : '') + '"></label><label>Фактически потрачено, ₽<input name="payment-rub" inputmode="decimal" data-manual="' + (payment.rubActual != null && payment.rubActual !== '' ? '1' : '0') + '" value="' + esc(payment.rubActual ?? '') + '"></label></div><label class="payment-comment">Комментарий<input name="payment-comment" value="' + esc(payment.comment || '') + '"></label><button type="button" class="ghost-button" onclick="this.parentElement.remove()">Удалить</button></div>';
+    const shownPlan = storedPlan || (currency !== 'RUB' ? (liveRate(currency) || 0) : 0);
+    const comment = payment.comment || '';
+    const commentOpen = String(comment).trim() !== '';
+    return '<div class="payment-row payment-plan"><input name="payment-id" type="hidden" value="' + esc(payment.id || '') + '"><input class="pay-date" name="payment-date" type="date" title="Дата" value="' + esc(payment.date || '') + '"><input class="pay-amount" name="payment-amount" inputmode="decimal" placeholder="Сумма" title="Сумма" value="' + esc(payment.amount ?? '') + '"><select class="pay-currency" name="payment-currency" title="Валюта">' + currencies + '</select><select class="pay-status" name="payment-status" title="Статус">' + options + '</select><label class="payment-plan-field pay-rate">Курс<input name="payment-plan-rate" inputmode="decimal" title="Курс для этого платежа. Пустое значение равно курсу программы" value="' + esc(shownPlan ? formatDecimal(shownPlan) : '') + '"></label><strong class="pay-rub-eq"></strong><button type="button" class="pay-note-toggle">' + (commentOpen ? 'Скрыть комментарий' : 'Комментарий') + '</button><button type="button" class="ghost-button pay-delete" onclick="this.parentElement.remove()">Удалить</button><label class="payment-comment"' + (commentOpen ? '' : ' hidden') + '><input name="payment-comment" placeholder="Комментарий" value="' + esc(comment) + '"></label><div class="payment-fact"><label>Дата оплаты<input name="payment-paid-date" type="date" value="' + esc(payment.paidDate || '') + '"></label><label>Оплачено<input name="payment-paid-amount" inputmode="decimal" value="' + esc(payment.paidAmount ?? '') + '"></label><label class="payment-rate-field">Курс оплаты<input name="payment-rate" inputmode="decimal" value="' + esc(payment.payRate != null && payment.payRate !== '' ? formatDecimal(payment.payRate) : '') + '"></label><label class="payment-rub-field">Потрачено, ₽<input name="payment-rub" inputmode="decimal" data-manual="' + (payment.rubActual != null && payment.rubActual !== '' ? '1' : '0') + '" value="' + esc(payment.rubActual ?? '') + '"></label></div></div>';
   }
 
   function prefillFact(row) {
@@ -553,32 +554,67 @@
     const currency = row.querySelector('[name="payment-currency"]');
     const date = row.querySelector('[name="payment-date"]');
     function sync() {
-      const form = row.closest('form');
-      const calc = form && form.querySelector('[name="calcType"]');
-      const foreign = calc ? calc.value === 'Зарубежное имущество' : (currency.value || 'RUB') !== 'RUB';
+      const foreign = (currency.value || 'RUB') !== 'RUB';
       const paid = status.value === 'Оплачено';
       fact.hidden = !paid;
-      row.querySelector('.payment-rate-field').hidden = !foreign || !paid;
+      const factRate = row.querySelector('.payment-rate-field');
+      if (factRate) factRate.hidden = !foreign;
+      const rubField = row.querySelector('.payment-rub-field');
+      if (rubField) rubField.hidden = !foreign;
       const plan = row.querySelector('.payment-plan-field');
       if (plan) plan.hidden = !foreign || paid;
-      const currencyField = row.querySelector('.payment-currency-field');
-      if (currencyField) currencyField.hidden = !foreign;
+      const equivalent = row.querySelector('.pay-rub-eq');
+      if (equivalent) {
+        equivalent.hidden = !foreign;
+        if (foreign) {
+          if (paid) {
+            const stored = rubles && rubles.value.trim() !== '' ? num(rubles.value) : 0;
+            const paidRate = num(rate.value);
+            const paidSum = num(paidAmount.value || row.querySelector('[name="payment-amount"]').value);
+            equivalent.textContent = stored > 0 ? '≈ ' + rub(stored) : (paidRate > 0 ? '≈ ' + rub(paidSum * paidRate) : 'курс не задан');
+          } else {
+            const planRate = num(row.querySelector('[name="payment-plan-rate"]').value);
+            const planned = num(row.querySelector('[name="payment-amount"]').value);
+            equivalent.textContent = planRate > 0 ? '≈ ' + rub(planned * planRate) : 'курс не задан';
+          }
+        }
+      }
     }
     status.addEventListener('change', function () {
       if (status.value === 'Оплачено') prefillFact(row);
       sync();
     });
-    currency.addEventListener('change', sync);
+    currency.addEventListener('change', function () {
+      const planInput = row.querySelector('[name="payment-plan-rate"]');
+      if ((currency.value || 'RUB') !== 'RUB' && planInput && planInput.value.trim() === '') {
+        const current = liveRate(currency.value);
+        if (current > 0) planInput.value = formatDecimal(current);
+      }
+      sync();
+    });
+    const planInput = row.querySelector('[name="payment-plan-rate"]');
+    if (planInput) planInput.addEventListener('input', sync);
+    row.querySelector('[name="payment-amount"]').addEventListener('input', sync);
+    const noteButton = row.querySelector('.pay-note-toggle');
+    const note = row.querySelector('.payment-comment');
+    if (noteButton && note) noteButton.addEventListener('click', function () {
+      note.hidden = !note.hidden;
+      noteButton.textContent = note.hidden ? 'Комментарий' : 'Скрыть комментарий';
+    });
     rate.addEventListener('input', function () {
-      if (rubles.dataset.manual === '1') return;
-      const amount = num(paidAmount.value || row.querySelector('[name="payment-amount"]').value);
-      if (num(rate.value) > 0) rubles.value = formatDecimal(amount * num(rate.value));
+      if (rubles.dataset.manual !== '1') {
+        const amount = num(paidAmount.value || row.querySelector('[name="payment-amount"]').value);
+        if (num(rate.value) > 0) rubles.value = formatDecimal(amount * num(rate.value));
+      }
+      sync();
     });
     paidAmount.addEventListener('input', function () {
-      if (rubles.dataset.manual === '1') return;
-      const currentRate = num(rate.value);
-      if ((currency.value || 'RUB') === 'RUB') rubles.value = paidAmount.value;
-      else if (currentRate > 0) rubles.value = formatDecimal(num(paidAmount.value) * currentRate);
+      if (rubles.dataset.manual !== '1') {
+        const currentRate = num(rate.value);
+        if ((currency.value || 'RUB') === 'RUB') rubles.value = paidAmount.value;
+        else if (currentRate > 0) rubles.value = formatDecimal(num(paidAmount.value) * currentRate);
+      }
+      sync();
     });
     rubles.addEventListener('input', function () { rubles.dataset.manual = '1'; });
     if (date) bindPaymentDate(date);
@@ -679,10 +715,8 @@
       if (head) head.insertAdjacentHTML('afterend', '<div class="payment-series"><label>Первая дата<input name="series-start" type="date"></label><label>Сумма<input name="series-amount" inputmode="decimal"></label><label>Количество<input name="series-count" inputmode="numeric" placeholder="12"></label><button type="button" class="ghost-button" onclick="addPaymentSeries()">Добавить все платежи</button><small>Платежи создаются раз в месяц, начиная с первой даты. Их можно поправить по отдельности.</small></div>');
     }
     const addButton = head && head.querySelector('button');
-    if (addButton && container) {
-      container.insertAdjacentElement('afterend', addButton);
-      addButton.classList.add('add-payment-below');
-    }
+    if (addButton) addButton.classList.add('add-payment-below');
+    anchorAddPaymentButton();
     if (section && !form.querySelector('[name="paidRub"]')) {
       section.insertAdjacentHTML('afterbegin', '<div class="paid-rub-field form-field"><label>Уже оплачено фактически, ₽</label><input name="paidRub" inputmode="decimal" value="' + esc(asset.paidRub ?? '') + '"><small>Только для части, внесённой до графика. Курс это число потом не пересчитывает.</small></div><p class="fx-asset-note">Стоимость по договору остаётся в валюте покупки. «Фактически вложено» складывается из рублей, указанных в оплаченных платежах.</p>');
     }
@@ -807,12 +841,22 @@
     if (type === 'asset') decorateAssetForm(id);
   };
 
+  function anchorAddPaymentButton() {
+    const container = document.getElementById('payment-rows');
+    const section = container && container.closest('.payment-section');
+    const button = section && (section.querySelector('.add-payment-below') || section.querySelector('.payment-section-head button'));
+    if (!container || !button) return;
+    container.insertAdjacentElement('afterend', button);
+    button.classList.add('add-payment-below');
+  }
+
   window.addPaymentRow = function (payment) {
     const container = document.getElementById('payment-rows');
     if (!container) return;
     const item = payment && payment.date ? payment : { currency: formCurrency(), status: 'Предстоит' };
     container.insertAdjacentHTML('beforeend', paymentRowHtml(item));
     wirePaymentRow(container.lastElementChild);
+    anchorAddPaymentButton();
   };
 
   const baseRender = render;

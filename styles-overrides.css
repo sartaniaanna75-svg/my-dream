@@ -107,6 +107,29 @@
 .compact-payment.compact-overdue strong,.compact-payment.compact-overdue .compact-status{color:#ff9b93!important}
 .compact-status{font-style:normal;font-size:12px;font-weight:800}
 .fully-paid-badge{display:inline-flex;margin-top:4px;padding:10px 12px;border:1px solid #2f8f78;background:#0e3d52;color:#55e0bd}
+.payment-section{display:flex;flex-direction:column;align-items:stretch}
+.payment-section>.paid-rub-field,.payment-section>.fx-asset-note{order:0}
+.payment-section>.payment-section-head{order:1}
+.payment-section>.payment-series{order:2}
+.payment-section>#payment-rows{order:3}
+.payment-section>.add-payment-below{order:4;align-self:flex-start}
+.payment-plan{display:flex!important;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 10px!important;margin-top:8px}
+.payment-plan .pay-date{width:146px;flex:0 0 146px}
+.payment-plan .pay-amount{width:118px;flex:0 0 118px}
+.payment-plan .pay-currency{width:78px;flex:0 0 78px}
+.payment-plan .pay-status{width:124px;flex:0 0 124px}
+.payment-plan .pay-rate{flex-direction:row!important;align-items:center;gap:6px;width:auto;margin:0}
+.payment-plan .pay-rate input{width:84px}
+.pay-rub-eq{color:#ffd7a8;font:800 13px Manrope;white-space:nowrap}
+.payment-plan .pay-note-toggle,.payment-plan>.pay-delete{width:auto!important;flex:0 0 auto;grid-column:auto!important;padding:6px 10px!important;font-size:12px!important}
+.payment-plan>.pay-delete{margin-left:auto}
+.payment-plan .payment-comment{display:flex;flex:1 0 100%;grid-column:auto!important;margin:0}
+.payment-plan .payment-comment[hidden]{display:none!important}
+.payment-plan .payment-comment input{width:100%}
+.payment-plan .payment-fact{display:flex;flex:1 0 100%;flex-wrap:wrap;gap:8px;align-items:center}
+.payment-plan .payment-fact[hidden]{display:none!important}
+.payment-plan .payment-fact label{flex-direction:row!important;align-items:center;gap:6px;width:auto;margin:0}
+.payment-plan .payment-fact input{width:130px}
 .add-payment-below{display:inline-flex;margin-top:12px}
 .asset-fx-facts{grid-template-columns:repeat(3,minmax(0,1fr))}
 .asset-pay-lines{display:flex;flex-direction:column;gap:6px}
