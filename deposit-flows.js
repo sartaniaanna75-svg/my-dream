@@ -220,19 +220,50 @@
     render();
   };
 
-  function destinationOptions() {
-    const accounts = state.accounts.map(function (account) {
-      const tail = account.last4 ? ' · •••• ' + account.last4 : '';
-      return '<option value="account|' + esc(account.id) + '">' + esc(accountTitle(account) + tail + ' · ' + rub(account.balance)) + '</option>';
-    }).join('');
-    const safes = (state.safes || []).filter(function (safe) { return (safe.currency || 'RUB') === 'RUB'; }).map(function (safe) {
+  function ownerKey(value) {
+    return String(value || '').trim().toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ');
+  }
+
+  function sameOwner(left, right) {
+    const key = ownerKey(left);
+    return key !== '' && key === ownerKey(right);
+  }
+
+  function accountDestinationText(account) {
+    const owner = String(account.owner || '').trim() || '—';
+    const tail = account.last4 ? '•••• ' + account.last4 : 'без номера';
+    return (account.bank || '—') + ' · ' + owner + ' · ' + tail + ' · ' + rub(account.balance);
+  }
+
+  function accountOption(account) {
+    return '<option value="account|' + esc(account.id) + '">' + esc(accountDestinationText(account)) + '</option>';
+  }
+
+  function safeDestinationOptions() {
+    return (state.safes || []).filter(function (safe) { return (safe.currency || 'RUB') === 'RUB'; }).map(function (safe) {
       const balance = (safe.operations || []).reduce(function (sum, op) {
         const amount = Math.abs(num(op.amount));
         return sum + (op.direction === 'out' ? -amount : amount);
       }, 0);
       return '<option value="safe|' + esc(safe.id) + '">Сейф · ' + esc(safe.name || 'Сейф') + ' · ' + rub(balance) + '</option>';
     }).join('');
-    return accounts + safes + '<option value="other">Другое / не учитывать перевод</option>';
+  }
+
+  function destinationOptions(deposit, mode) {
+    const mine = [];
+    const others = [];
+    state.accounts.forEach(function (account) {
+      if (sameOwner(account.owner, deposit.owner)) mine.push(account);
+      else others.push(account);
+    });
+    const mineHtml = mine.length ? mine.map(accountOption).join('') : '<option value="" disabled>Нет счетов этого владельца</option>';
+    let html = '<option value="">Выберите</option><optgroup label="Счета владельца вклада">' + mineHtml + '</optgroup>';
+    if (mode === 'all') {
+      if (others.length) html += '<optgroup label="Другие счета">' + others.map(accountOption).join('') + '</optgroup>';
+      const safes = safeDestinationOptions();
+      if (safes) html += '<optgroup label="Сейф">' + safes + '</optgroup>';
+    }
+    return html + '<option value="other">Другое / не учитывать перевод</option>';
   }
 
   function archiveBlock() {
@@ -260,12 +291,22 @@
     if (!deposit || deposit.closed) return;
     const interestDefault = deposit.status === 'Получено' ? 0 : num(deposit.expected);
     const interestValue = typeof formatMoneyInput === 'function' ? formatMoneyInput(interestDefault) : interestDefault;
-    document.getElementById('modal-root').innerHTML = '<div class="modal-backdrop" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-header"><h2>Закрыть вклад</h2><button class="close" type="button" onclick="closeModal()">×</button></div><form id="close-deposit-form"><div class="modal-body"><div class="form-grid"><div class="form-field"><label>Банк</label><input value="' + esc(deposit.bank || '—') + '" readonly></div><div class="form-field"><label>Название вклада</label><input value="' + esc(deposit.name || '—') + '" readonly></div><div class="form-field"><label>Последние 4 цифры</label><input value="' + esc(deposit.last4 ? '•••• ' + deposit.last4 : '—') + '" readonly></div><div class="form-field"><label>Сумма вклада</label><input value="' + esc(rub(deposit.current)) + '" readonly></div><div class="form-field"><label>Дата закрытия</label><input name="closedAt" type="date" value="' + isoDate(today) + '"></div><div class="form-field"><label>Фактически полученные проценты</label><input name="closeInterest" type="text" inputmode="decimal" autocomplete="off" value="' + esc(interestValue) + '"></div><div class="form-field full deposit-close-total"><label>Итого к получению</label><strong class="deposit-payout">' + rub(moneyOk(num(deposit.current) + num(interestDefault))) + '</strong></div><div class="form-field full"><label>Куда поступили деньги?</label><select name="destination"><option value="">Выберите</option>' + destinationOptions() + '</select></div></div></div><div class="modal-footer"><button type="button" class="ghost-button" onclick="closeModal()">Отмена</button><button class="primary-button">Закрыть вклад</button></div></form></div></div>';
+    document.getElementById('modal-root').innerHTML = '<div class="modal-backdrop" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-header"><h2>Закрыть вклад</h2><button class="close" type="button" onclick="closeModal()">×</button></div><form id="close-deposit-form"><div class="modal-body"><div class="form-grid"><div class="form-field"><label>Банк</label><input value="' + esc(deposit.bank || '—') + '" readonly></div><div class="form-field"><label>Название вклада</label><input value="' + esc(deposit.name || '—') + '" readonly></div><div class="form-field"><label>Последние 4 цифры</label><input value="' + esc(deposit.last4 ? '•••• ' + deposit.last4 : '—') + '" readonly></div><div class="form-field"><label>Сумма вклада</label><input value="' + esc(rub(deposit.current)) + '" readonly></div><div class="form-field"><label>Дата закрытия</label><input name="closedAt" type="date" value="' + isoDate(today) + '"></div><div class="form-field"><label>Фактически полученные проценты</label><input name="closeInterest" type="text" inputmode="decimal" autocomplete="off" value="' + esc(interestValue) + '"></div><div class="form-field full deposit-close-total"><label>Итого к получению</label><strong class="deposit-payout">' + rub(moneyOk(num(deposit.current) + num(interestDefault))) + '</strong></div><div class="form-field full"><label>Куда поступили деньги?</label><div class="deposit-owner-filter"><span>Владелец:</span><button type="button" class="ghost-button' + (ownerKey(deposit.owner) ? ' is-active' : '') + '" data-filter="owner">Владелец вклада</button><button type="button" class="ghost-button' + (ownerKey(deposit.owner) ? '' : ' is-active') + '" data-filter="all">Все</button></div><select name="destination">' + destinationOptions(deposit, ownerKey(deposit.owner) ? 'owner' : 'all') + '</select></div></div></div><div class="modal-footer"><button type="button" class="ghost-button" onclick="closeModal()">Отмена</button><button class="primary-button">Закрыть вклад</button></div></form></div></div>';
     const form = document.getElementById('close-deposit-form');
     const interestInput = form.querySelector('[name="closeInterest"]');
     const payout = form.querySelector('.deposit-payout');
     const refresh = function () { payout.textContent = rub(moneyOk(num(deposit.current) + num(interestInput.value))); };
     interestInput.addEventListener('input', refresh);
+    const destinationSelect = form.querySelector('[name="destination"]');
+    form.querySelectorAll('[data-filter]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        const current = destinationSelect.value;
+        form.querySelectorAll('[data-filter]').forEach(function (item) { item.classList.toggle('is-active', item === button); });
+        destinationSelect.innerHTML = destinationOptions(deposit, button.getAttribute('data-filter'));
+        const stillThere = [].some.call(destinationSelect.options, function (option) { return option.value === current && !option.disabled; });
+        if (stillThere) destinationSelect.value = current;
+      });
+    });
     form.onsubmit = function (event) {
       event.preventDefault();
       if (form.dataset.saving === '1' || deposit.closed) return;
@@ -283,7 +324,7 @@
         const account = state.accounts.find(function (item) { return item.id === targetId; });
         if (!account) { alert('Выберите карту или счёт.'); return; }
         account.balance = moneyOk(num(account.balance) + payoutAmount);
-        label = accountTitle(account) + (account.last4 ? ' · •••• ' + account.last4 : '');
+        label = (account.bank || '—') + ' · ' + (String(account.owner || '').trim() || '—') + (account.last4 ? ' · •••• ' + account.last4 : '');
       } else if (kind === 'safe') {
         const safe = (state.safes || []).find(function (item) { return item.id === targetId; });
         if (!safe || (safe.currency || 'RUB') !== 'RUB') { alert('Выберите рублёвый сейф.'); return; }
