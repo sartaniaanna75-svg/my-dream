@@ -40,8 +40,14 @@ function compactObligationCard(item) {
     if (currency && currency !== 'RUB' && typeof moneyOriginal === 'function') return moneyOriginal(amount, currency);
     return rub(amount);
   };
-  const purchase = item.asset && item.asset.currency && item.asset.currency !== 'RUB' && typeof fxPurchase === 'function' ? fxPurchase(item.asset) : null;
-  const fxNote = purchase && item.remaining > 0 ? '<p class="fx-obligation-note">Осталось ' + (typeof moneyOriginal === 'function' ? moneyOriginal(purchase.left, purchase.currency) : purchase.left + ' ' + purchase.currency) + (purchase.rate > 0 ? ' · необходимо подготовить ' + rub(purchase.future) : '') + '</p>' : '';
+  const remainHint = function () {
+    const asset = item.asset;
+    const code = asset && asset.currency;
+    if (!code || code === 'RUB' || !(item.remaining > 0)) return '';
+    const rate = typeof currentFx === 'function' ? currentFx(asset, code) : num(state.fx && state.fx[code]);
+    if (!(rate > 0)) return '<small>курс не задан</small>';
+    return '<small>≈ ' + rub(roundMoney(item.remaining * rate)) + ' по текущему курсу</small>';
+  };
   const displayStatus = function (entry) {
     if (entry.status === 'Оплачено') return 'Оплачено';
     if (entry.status === 'Просрочено' || (entry.date && daysFromNow(entry.date) < 0)) return 'Просрочено';
@@ -64,7 +70,7 @@ function compactObligationCard(item) {
   const nextBlock = next
     ? '<div class="nearest-payment' + (nextOverdue ? ' is-overdue' : '') + '"><div><small>' + item.what + '</small><strong>' + showMoney(next.amount) + '</strong><span>' + obligationDateWithYear(next.date) + ' · ' + ((next.currency) || (item.asset && item.asset.currency) || 'RUB') + ' · ' + displayStatus(next) + '</span></div><button class="primary-button compact-paid-button" onclick="markObligationPayment(\'' + item.kind + '\',\'' + ownerId + '\',\'' + next.id + '\')">Оплачено</button></div>'
     : (item.remaining <= 0 ? '<div class="fully-paid-badge">✓ Полностью оплачено</div>' : '<div class="no-payment-schedule">Будущие платежи не добавлены</div>');
-  return '<article class="obligation-card compact-obligation-card"><div class="obligation-card-head"><div><h3>' + item.what + '</h3><span>' + (item.who || '') + '</span></div><span class="tag tag-blue">' + (item.kind === 'asset' ? 'Из имущества' : 'Вручную') + '</span></div><div class="ob-metrics"><div><span>Стоимость</span><strong>' + showMoney(item.total) + '</strong></div><div><span>Оплачено</span><strong>' + showMoney(item.paid) + '</strong></div><div><span>Осталось</span><strong class="danger">' + showMoney(item.remaining) + '</strong></div></div>' + fxNote + nextBlock + '<button class="all-payments-toggle" type="button" onclick="toggleObligationPayments(\'' + item.id + '\',this)">Все платежи (' + all.length + ') ↓</button><div class="all-obligation-payments" id="obligation-payments-' + item.id + '" data-count="' + all.length + '">' + future + history + '</div></article>';
+  return '<article class="obligation-card compact-obligation-card"><div class="obligation-card-head"><div><h3>' + item.what + '</h3><span>' + (item.who || '') + '</span></div><span class="tag tag-blue">' + (item.kind === 'asset' ? 'Из имущества' : 'Вручную') + '</span></div><div class="ob-metrics"><div><span>Стоимость</span><strong>' + showMoney(item.total) + '</strong></div><div><span>Оплачено</span><strong>' + showMoney(item.paid) + '</strong></div><div><span>Осталось</span><strong class="danger">' + showMoney(item.remaining) + '</strong>' + remainHint() + '</div></div>' + nextBlock + '<button class="all-payments-toggle" type="button" onclick="toggleObligationPayments(\'' + item.id + '\',this)">Все платежи (' + all.length + ') ↓</button><div class="all-obligation-payments" id="obligation-payments-' + item.id + '" data-count="' + all.length + '">' + future + history + '</div></article>';
 }
 
 function nearestObligationPayment(items) {
