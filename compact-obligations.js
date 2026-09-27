@@ -209,9 +209,12 @@ function periodSwitch(window) {
   }).join('') + '</div>';
 }
 
-function dueList(rows, totalRub, missingRate) {
+function dueList(rows, totalRub, missingRate, horizon) {
+  const title = horizon && horizon.title ? horizon.title : 'Выбранный период';
+  const paymentLabel = horizon && horizon.key === 'month' ? 'Платежи месяца' : 'Платежи';
+  const prepare = '<div class="due-prepare"><div><span>' + paymentLabel + '</span><strong>' + rub(totalRub) + '</strong></div><div><span>Нужно подготовить</span><strong>' + rub(totalRub) + '</strong><small>только выбранный период</small></div></div>';
   if (!rows.length) {
-    return '<section class="obligation-due panel"><p class="eyebrow">ЧТО НУЖНО ОПЛАТИТЬ</p><h3>Платежи периода</h3><div class="rent-empty">В выбранном периоде неоплаченных платежей нет</div></section>';
+    return '<section class="obligation-due panel"><p class="eyebrow">ЧТО НУЖНО ОПЛАТИТЬ</p><h3>' + escText(title) + '</h3>' + prepare + '<div class="rent-empty">В выбранном периоде неоплаченных платежей нет</div></section>';
   }
   let running = 0;
   const body = rows.map(function (row) {
@@ -232,7 +235,7 @@ function dueList(rows, totalRub, missingRate) {
     return '<article class="due-row' + (hot ? ' is-hot' : '') + '"><time>' + fullDate(row.payment.date) + '</time><div><b>' + escText(row.title) + '</b><strong>' + original + '</strong>' + rubLine + course + warn + lack + '</div></article>';
   }).join('');
   const note = missingRate ? '<small>Для части платежей курс не задан, они не вошли в рублёвый итог.</small>' : '';
-  return '<section class="obligation-due panel"><p class="eyebrow">ЧТО НУЖНО ОПЛАТИТЬ</p><h3>Платежи по датам</h3><div class="due-list">' + html + '</div><div class="due-foot"><span>Всего платежей: <b>' + rows.length + '</b></span><span>Всего подготовить: <b>' + rub(totalRub) + '</b></span></div>' + note + '</section>';
+  return '<section class="obligation-due panel"><p class="eyebrow">ЧТО НУЖНО ОПЛАТИТЬ</p><h3>' + escText(title) + '</h3>' + prepare + '<div class="due-list">' + html + '</div><div class="due-foot"><span>Всего платежей: <b>' + rows.length + '</b></span><span>Нужно подготовить в периоде: <b>' + rub(totalRub) + '</b></span></div>' + note + '</section>';
 }
 
 function compactDebtsView() {
@@ -251,8 +254,9 @@ function compactDebtsView() {
     if (row.rub == null) missingRate = true;
     else periodRub = roundMoney(periodRub + row.rub);
   });
-  const gap = roundMoney(periodRub - available);
-  const covered = gap <= 0;
+  const uncovered = roundMoney(Math.max(total - available, 0));
+  const surplus = roundMoney(Math.max(available - total, 0));
+  const fullyCovered = uncovered <= 0;
   const countLabel = rows.length + ' ' + plural(rows.length, 'платёж', 'платежа', 'платежей');
   const outsideOverdue = obligationPeriod === 'days' ? 0 : active.reduce(function (sum, item) {
     return sum + (item.allPayments || []).filter(function (payment) {
@@ -260,14 +264,17 @@ function compactDebtsView() {
     }).length;
   }, 0);
   const overdueNote = outsideOverdue ? '<p class="due-outside">Просроченных платежей вне этого периода: ' + outsideOverdue + '. Они видны в режиме «Ближайшие 30 дней».</p>' : '';
+  const coverageCard = fullyCovered
+    ? '<div class="obligation-summary-item summary-good"><span>Обеспеченность обязательств</span><strong>Все обязательства обеспечены</strong><small>Свободный остаток после покрытия: ' + rub(surplus) + '</small></div>'
+    : '<div class="obligation-summary-item summary-danger"><span>Обеспеченность обязательств</span><em class="coverage-status">Не обеспечено</em><strong>' + rub(uncovered) + '</strong><small>Резерв покрывает часть обязательств.</small></div>';
   const summary = '<div class="obligation-summary">' +
-    '<div class="obligation-summary-item"><span>Финансовый резерв</span><strong>' + rub(available) + '</strong><small>только деньги с разрешением на оплату</small></div>' +
-    '<div class="obligation-summary-item"><span>Все обязательства</span><strong>' + rub(total) + '</strong><small>осталось оплатить по всем договорам</small></div>' +
-    '<div class="obligation-summary-item summary-next"><span>Ближайшие платежи</span><strong>' + rub(periodRub) + '</strong><small>' + escText(horizon.title) + ' · ' + countLabel + (missingRate ? ' · курс не задан для части платежей' : '') + '</small></div>' +
-    '<div class="obligation-summary-item ' + (covered ? 'summary-good' : 'summary-danger') + '"><span>Нужно обеспечить</span><strong>' + (covered ? 'Средств достаточно' : rub(gap)) + '</strong><small>' + (covered ? 'остаток резерва ' + rub(roundMoney(available - periodRub)) : 'не хватает на платежи выбранного периода') + '</small></div>' +
+    '<div class="obligation-summary-item"><span>Финансовый резерв</span><strong>' + rub(available) + '</strong><small>Деньги, доступные для оплаты</small></div>' +
+    '<div class="obligation-summary-item"><span>Все обязательства</span><strong>' + rub(total) + '</strong><small>Осталось оплатить по всем договорам</small></div>' +
+    '<div class="obligation-summary-item summary-next"><span>Платежи периода</span><strong>' + rub(periodRub) + '</strong><small>' + escText(horizon.title) + ' • ' + countLabel + (missingRate ? ' • курс не задан для части платежей' : '') + '</small></div>' +
+    coverageCard +
     '</div>';
   dueList.reserve = available;
-  return '<div class="view-wrap"><div class="section-heading"><div><p class="eyebrow">УПРАВЛЕНИЕ ДАННЫМИ</p><h2>Обязательства</h2><p>Сколько денег и к каким датам нужно подготовить по всем обязательствам</p></div><button class="primary-button" onclick="openForm(\'debt\')">＋ Добавить обязательство</button></div>' + periodSwitch(horizon) + summary + overdueNote + dueList(rows, periodRub, missingRate) + '<div class="obligation-cards">' + (active.length ? active.map(compactObligationCard).join('') : '<div class="panel empty">Активных обязательств нет</div>') + '</div>' + (completed.length ? '<details class="completed-obligations"><summary>Завершённые (' + completed.length + ')</summary><div class="obligation-cards">' + completed.map(compactObligationCard).join('') + '</div></details>' : '') + '</div>';
+  return '<div class="view-wrap"><div class="section-heading"><div><p class="eyebrow">УПРАВЛЕНИЕ ДАННЫМИ</p><h2>Обязательства</h2><p>Сколько денег и к каким датам нужно подготовить по всем обязательствам</p></div><button class="primary-button" onclick="openForm(\'debt\')">＋ Добавить обязательство</button></div>' + periodSwitch(horizon) + summary + overdueNote + dueList(rows, periodRub, missingRate, horizon) + '<div class="obligation-cards">' + (active.length ? active.map(compactObligationCard).join('') : '<div class="panel empty">Активных обязательств нет</div>') + '</div>' + (completed.length ? '<details class="completed-obligations"><summary>Завершённые (' + completed.length + ')</summary><div class="obligation-cards">' + completed.map(compactObligationCard).join('') + '</div></details>' : '') + '</div>';
 }
 
 window.setObligationPeriod = function (key) {

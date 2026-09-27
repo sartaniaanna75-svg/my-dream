@@ -78,6 +78,13 @@
 .obligation-summary-item span{font-size:12px;font-weight:700}
 .obligation-summary-item strong{display:block;margin-top:10px;color:#fff!important;font:800 26px/1.15 Manrope!important;letter-spacing:-.04em}
 .obligation-summary-item small,.summary-object{display:block;margin-top:8px;color:#a9bde2;font-size:12px;font-weight:700;line-height:1.35}
+.obligation-summary-item .coverage-status{display:block;margin-top:10px;color:#ff9b93;font:800 12px/1.2 'DM Sans',sans-serif;font-style:normal;letter-spacing:.04em;text-transform:uppercase}
+.summary-danger strong{margin-top:4px}
+.due-prepare{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:8px 0 4px}
+.due-prepare div{padding:10px 12px;border-radius:10px;background:#10347a;border:1px solid #1e4b97}
+.due-prepare span{display:block;color:#a9bde2;font-size:11px;font-weight:700}
+.due-prepare strong{display:block;margin-top:4px;color:#fff;font:800 18px Manrope}
+.due-prepare small{display:block;margin-top:4px;color:#c5d6f2;font-size:12px;font-weight:700}
 .obligation-period{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px}
 .obligation-period button{padding:8px 14px;border-radius:999px;background:#0c2c6e;color:#d5e4ff;border:1px solid #2b5aa8;font-weight:800;font-size:13px}
 .obligation-period button.is-on{background:linear-gradient(105deg,#ffb64e,#ff7648);color:#1b2430;border-color:#ffc05e}
