@@ -21,14 +21,20 @@ function toggleObligationPayments(id, button) {
   const list = document.getElementById('obligation-payments-' + id);
   if (!list) return;
   const open = list.classList.toggle('is-open');
-  button.textContent = open ? 'Скрыть платежи ▲' : 'Все платежи (' + list.querySelectorAll('.compact-payment').length + ') ▼';
+  button.textContent = open ? 'Скрыть платежи ↑' : 'Все платежи (' + list.dataset.count + ') ↓';
 }
 window.toggleObligationPayments = toggleObligationPayments;
 
+function obligationDateWithYear(value) {
+  if (!value) return '—';
+  const date = new Date(value + 'T12:00:00');
+  return date.getDate() + ' ' + date.toLocaleDateString('ru-RU', { month: 'long' }) + ' ' + date.getFullYear();
+}
+
 function compactObligationCard(item) {
   const all = item.allPayments || [];
-  const upcoming = all.filter(function (payment) { return payment.status !== 'Оплачено'; }).sort(function (a, b) { return a.date.localeCompare(b.date); });
-  const paid = all.filter(function (payment) { return payment.status === 'Оплачено'; }).sort(function (a, b) { return b.date.localeCompare(a.date); });
+  const upcoming = all.filter(function (payment) { return payment.status !== 'Оплачено'; }).sort(function (a, b) { return String(a.date || '').localeCompare(String(b.date || '')); });
+  const paid = all.filter(function (payment) { return payment.status === 'Оплачено'; }).sort(function (a, b) { return String(b.date || '').localeCompare(String(a.date || '')); });
   const next = upcoming[0];
   const ownerId = item.kind === 'asset' && item.asset ? item.asset.id : item.id;
   const showMoney = function (amount) {
@@ -42,20 +48,57 @@ function compactObligationCard(item) {
     if (entry.status === 'Просрочено' || (entry.date && daysFromNow(entry.date) < 0)) return 'Просрочено';
     return 'Предстоит';
   };
-  const payment = function (entry) { const status = displayStatus(entry); return '<div class="compact-payment ' + (entry.status === 'Оплачено' ? 'compact-paid' : '') + '"><div><strong>' + (entry.status === 'Оплачено' ? '✓ ' : '') + showMoney(entry.status === 'Оплачено' ? (entry.paidAmount != null && entry.paidAmount !== '' ? entry.paidAmount : entry.amount) : entry.amount) + '</strong><span>' + dateText(entry.status === 'Оплачено' && entry.paidDate ? entry.paidDate : entry.date) + '</span></div><span class="compact-status">' + status + '</span></div>'; };
-  const history = paid.length ? '<div class="payment-group"><h4>История оплаченных</h4>' + paid.map(payment).join('') + '</div>' : '';
+  const payment = function (entry) {
+    const status = displayStatus(entry);
+    const paidOne = entry.status === 'Оплачено';
+    const amount = paidOne && entry.paidAmount != null && entry.paidAmount !== '' ? entry.paidAmount : entry.amount;
+    if (paidOne) {
+      const when = obligationDateWithYear(entry.paidDate || entry.date);
+      return '<div class="compact-payment compact-paid"><strong>✓ ' + showMoney(amount) + ' · ' + when + ' · Оплачено</strong></div>';
+    }
+    const overdue = status === 'Просрочено';
+    return '<div class="compact-payment' + (overdue ? ' compact-overdue' : '') + '"><div><strong>' + showMoney(entry.amount) + '</strong><span>' + dateText(entry.date) + '</span></div><em class="compact-status">' + status + '</em></div>';
+  };
+  const history = paid.length ? '<div class="payment-group"><h4>Оплаченные</h4>' + paid.map(payment).join('') + '</div>' : '';
   const future = upcoming.length ? '<div class="payment-group"><h4>Предстоящие</h4>' + upcoming.map(payment).join('') + '</div>' : '';
-  const nextBlock = next ? '<div class="nearest-payment"><div><small>Ближайший платёж</small><strong>' + showMoney(next.amount) + '</strong><span>' + dateText(next.date) + '</span></div><button class="primary-button compact-paid-button" onclick="markObligationPayment(\'' + item.kind + '\',\'' + ownerId + '\',\'' + next.id + '\')">Оплачено</button></div>' : (item.remaining <= 0 ? '<div class="fully-paid-badge">✓ Полностью оплачено</div>' : '<div class="no-payment-schedule">Будущие платежи не добавлены</div>');
-  return '<article class="obligation-card compact-obligation-card"><div class="obligation-card-head"><div><p class="eyebrow">' + (item.kind === 'asset' ? 'ИМУЩЕСТВО' : 'РУЧНОЕ ОБЯЗАТЕЛЬСТВО') + '</p><h3>' + item.what + '</h3><span>' + item.who + '</span></div><span class="tag tag-blue">' + (item.kind === 'asset' ? 'Из имущества' : 'Вручную') + '</span></div><div class="obligation-totals"><div><span>Стоимость</span><strong>' + showMoney(item.total) + '</strong></div><div><span>Оплачено</span><strong>' + showMoney(item.paid) + '</strong></div><div><span>Осталось оплатить</span><strong class="danger">' + showMoney(item.remaining) + '</strong></div></div>' + fxNote + nextBlock + '<button class="all-payments-toggle" onclick="toggleObligationPayments(\'' + item.id + '\',this)">Все платежи (' + all.length + ') ▼</button><div class="all-obligation-payments" id="obligation-payments-' + item.id + '">' + future + history + '</div></article>';
+  const nextOverdue = next && displayStatus(next) === 'Просрочено';
+  const nextBlock = next && item.remaining > 0
+    ? '<div class="nearest-payment' + (nextOverdue ? ' is-overdue' : '') + '"><div><small>Ближайший платёж</small><strong>' + showMoney(next.amount) + '</strong><span>' + obligationDateWithYear(next.date) + '</span></div><button class="primary-button compact-paid-button" onclick="markObligationPayment(\'' + item.kind + '\',\'' + ownerId + '\',\'' + next.id + '\')">Оплачено</button></div>'
+    : (item.remaining <= 0 ? '<div class="fully-paid-badge">✓ Полностью оплачено</div>' : '<div class="no-payment-schedule">Будущие платежи не добавлены</div>');
+  return '<article class="obligation-card compact-obligation-card"><div class="obligation-card-head"><div><h3>' + item.what + '</h3><span>' + (item.who || '') + '</span></div><span class="tag tag-blue">' + (item.kind === 'asset' ? 'Из имущества' : 'Вручную') + '</span></div><div class="ob-metrics"><div><span>Стоимость</span><strong>' + showMoney(item.total) + '</strong></div><div><span>Оплачено</span><strong>' + showMoney(item.paid) + '</strong></div><div><span>Осталось</span><strong class="danger">' + showMoney(item.remaining) + '</strong></div></div>' + fxNote + nextBlock + '<button class="all-payments-toggle" type="button" onclick="toggleObligationPayments(\'' + item.id + '\',this)">Все платежи (' + all.length + ') ↓</button><div class="all-obligation-payments" id="obligation-payments-' + item.id + '" data-count="' + all.length + '">' + future + history + '</div></article>';
+}
+
+function nearestObligationPayment(items) {
+  const found = [];
+  items.forEach(function (item) {
+    (item.allPayments || []).forEach(function (payment) {
+      if (payment.status === 'Оплачено' || !payment.date) return;
+      found.push({ item: item, payment: payment });
+    });
+  });
+  found.sort(function (a, b) { return String(a.payment.date).localeCompare(String(b.payment.date)); });
+  return found[0] || null;
 }
 
 function compactDebtsView() {
   const active = obligations();
-  const completed = state.assets.filter(function (asset) { return assetRemaining(asset) <= 0; }).map(function (asset) { return { kind: 'asset', id: asset.id, what: asset.name, who: asset.owner || asset.description, total: num(asset.price), paid: assetPaid(asset), remaining: 0, allPayments: assetPayments(asset) }; });
-  const cash = state.accounts.reduce(function (sum, account) { return sum + num(account.balance); }, 0);
+  const completed = state.assets.filter(function (asset) { return assetRemaining(asset) <= 0; }).map(function (asset) { return { kind: 'asset', id: asset.id, asset: asset, what: asset.name, who: asset.owner || asset.description, total: num(asset.price), paid: assetPaid(asset), remaining: 0, allPayments: assetPayments(asset) }; });
+  const snapshot = totals();
+  const available = num(snapshot.cash) + num(snapshot.safe);
   const total = active.reduce(function (sum, item) { return sum + (typeof obligationRemainingRub === 'function' ? obligationRemainingRub(item) : item.remaining); }, 0);
-  const need = Math.max(0, total - cash);
-  const summary = '<div class="obligation-summary"><div class="obligation-summary-item"><span>Доступно на картах и счетах</span><strong>' + rub(cash) + '</strong></div><div class="obligation-summary-item"><span>Всего обязательств</span><strong>' + rub(total) + '</strong></div><div class="obligation-summary-item"><span>Ближайший платёж</span><strong>См. в карточках</strong></div><div class="obligation-summary-item ' + (need ? 'summary-danger' : 'summary-good') + '"><span>Нужно обеспечить</span><strong>' + (need ? 'Нужно обеспечить ещё: ' + rub(need) : 'Средств достаточно') + '</strong></div></div>';
+  const need = Math.max(0, total - available);
+  const nearest = nearestObligationPayment(active);
+  const nearestMoney = nearest ? (function () {
+    const currency = nearest.item.asset && nearest.item.asset.currency;
+    if (currency && currency !== 'RUB' && typeof moneyOriginal === 'function') return moneyOriginal(nearest.payment.amount, currency);
+    return rub(nearest.payment.amount);
+  })() : '—';
+  const summary = '<div class="obligation-summary">' +
+    '<div class="obligation-summary-item"><span>Доступно сейчас</span><strong>' + rub(available) + '</strong><small>карты + счета + сейф</small></div>' +
+    '<div class="obligation-summary-item"><span>Все обязательства</span><strong>' + rub(total) + '</strong><small>осталось оплатить</small></div>' +
+    '<div class="obligation-summary-item summary-next"><span>Ближайший платёж</span><strong>' + nearestMoney + '</strong>' + (nearest ? '<small>' + dateText(nearest.payment.date) + '</small><b class="summary-object">' + nearest.item.what + '</b>' : '<small>платежей нет</small>') + '</div>' +
+    '<div class="obligation-summary-item ' + (need ? 'summary-danger' : 'summary-good') + '"><span>Нужно обеспечить</span><strong>' + rub(need) + '</strong><small>' + (need ? 'не хватает для покрытия обязательств' : 'денег достаточно') + '</small></div>' +
+    '</div>';
   return '<div class="view-wrap"><div class="section-heading"><div><p class="eyebrow">УПРАВЛЕНИЕ ДАННЫМИ</p><h2>Обязательства</h2><p>Компактный контроль ближайших платежей</p></div><button class="primary-button" onclick="openForm(\'debt\')">＋ Добавить обязательство</button></div>' + summary + '<div class="obligation-cards">' + (active.length ? active.map(compactObligationCard).join('') : '<div class="panel empty">Активных обязательств нет</div>') + '</div>' + (completed.length ? '<details class="completed-obligations"><summary>Завершённые (' + completed.length + ')</summary><div class="obligation-cards">' + completed.map(compactObligationCard).join('') + '</div></details>' : '') + '</div>';
 }
 

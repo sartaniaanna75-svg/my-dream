@@ -71,3 +71,41 @@
 .asset-revalue{margin-top:10px}
 @media(max-width:900px){.asset-metrics,.asset-value-block,.payment-plan,.payment-series{grid-template-columns:1fr 1fr}}
 @media(max-width:720px){.safe-total,.safe-card-head,.safe-dash,.fx-grid{display:block}.safe-balance{text-align:left;margin-top:12px}}
+
+.obligation-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:0 0 18px;align-items:stretch}
+.obligation-summary-item{display:flex;flex-direction:column;justify-content:flex-start;min-height:124px;padding:14px 16px!important;border-radius:14px!important}
+.obligation-summary-item span{font-size:12px;font-weight:700}
+.obligation-summary-item strong{display:block;margin-top:10px;color:#fff!important;font:800 26px/1.15 Manrope!important;letter-spacing:-.04em}
+.obligation-summary-item small,.summary-object{display:block;margin-top:8px;color:#a9bde2;font-size:12px;font-weight:700;line-height:1.35}
+.summary-next{border-color:#ff9e3d!important;box-shadow:inset 3px 0 0 #ff9e3d,0 10px 22px #020d3a44!important}
+.summary-next small,.summary-next .summary-object{color:#ffd7a8!important}
+.summary-danger strong{color:#ff8580!important}
+.summary-good strong{color:#43dfbd!important}
+.summary-good small{color:#8ee0cb!important}
+.obligation-cards{display:grid;grid-template-columns:repeat(2,minmax(280px,480px));gap:16px;justify-content:start;align-items:start}
+.obligation-cards>.panel.empty{grid-column:1/-1}
+.compact-obligation-card{width:100%;padding:16px!important;border-radius:16px!important}
+.compact-obligation-card .obligation-property-photo{width:72px;height:52px;margin:0 0 12px;border-radius:8px}
+.obligation-card-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.obligation-card-head h3{margin:0 0 6px;font:800 20px Manrope}
+.obligation-card-head span{display:block;color:#a9bde2;font-size:13px}
+.obligation-card-head .tag{flex-shrink:0}
+.ob-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:14px 0 12px}
+.ob-metrics div{padding:10px 10px 12px;border-radius:10px;background:#0c2c6e;border:1px solid #1e4b97}
+.ob-metrics span{display:block;margin-bottom:8px;color:#a9bde2!important;font-size:11px;font-weight:700}
+.ob-metrics strong{display:block;color:#fff!important;font:800 16px/1.2 Manrope;letter-spacing:-.03em}
+.ob-metrics .danger{color:#ff8580!important}
+.compact-obligation-card .nearest-payment{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:4px;padding:12px 14px;border:1px solid #ff9e3d;border-radius:12px;background:#10275f;box-shadow:inset 3px 0 0 #ff9e3d}
+.compact-obligation-card .nearest-payment.is-overdue{border-color:#ff6b6b;box-shadow:inset 3px 0 0 #e25b5b}
+.compact-obligation-card .nearest-payment small{color:#ffd48a;font-size:11px;font-weight:800;letter-spacing:.04em}
+.compact-obligation-card .nearest-payment strong{margin-top:6px;color:#fff;font:800 22px Manrope}
+.compact-obligation-card .nearest-payment span{margin-top:4px;color:#f3e6d0;font-size:13px}
+.compact-obligation-card .all-payments-toggle{display:inline-flex;width:auto;margin-top:12px}
+.compact-payment.compact-paid{opacity:1;background:#12324f;border-color:#2a6d62}
+.compact-payment.compact-paid strong{color:#7ddec0;font-size:13px;font-weight:700}
+.compact-payment.compact-overdue{border-color:#c45a58;background:#3a2448}
+.compact-payment.compact-overdue strong,.compact-payment.compact-overdue .compact-status{color:#ff9b93!important}
+.compact-status{font-style:normal;font-size:12px;font-weight:800}
+.fully-paid-badge{display:inline-flex;margin-top:4px;padding:10px 12px;border:1px solid #2f8f78;background:#0e3d52;color:#55e0bd}
+@media(max-width:1180px){.obligation-summary{grid-template-columns:1fr 1fr}.obligation-cards{grid-template-columns:minmax(0,520px)}}
+@media(max-width:720px){.obligation-summary{grid-template-columns:1fr}.obligation-summary-item strong{font-size:22px!important}.ob-metrics{grid-template-columns:1fr}}
