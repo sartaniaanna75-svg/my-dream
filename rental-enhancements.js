@@ -514,6 +514,7 @@
     let depositExpected = 0;
     let rentExpected = 0;
     state.deposits.forEach(function (deposit) {
+      if (deposit.closed) return;
       if (inCurrentMonth(deposit.nextDate)) depositReceived += num(deposit.received);
       if (deposit.status !== 'Получено' && inCurrentMonth(deposit.nextDate)) depositExpected += num(deposit.expected);
     });
@@ -559,7 +560,7 @@
       document.getElementById('app-view').innerHTML = rentalsView();
       document.querySelectorAll('.nav-item').forEach(function (button) { button.classList.toggle('active', button.dataset.view === 'rentals'); });
       document.getElementById('page-title').textContent = 'Аренда';
-      document.getElementById('deposit-count').textContent = state.deposits.length;
+      document.getElementById('deposit-count').textContent = state.deposits.filter(function (item) { return !item.closed; }).length;
       document.getElementById('debt-count').textContent = obligations().length;
       updateRentCount();
       document.getElementById('today-label').textContent = dateText(isoDate(today));

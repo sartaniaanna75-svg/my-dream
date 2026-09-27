@@ -184,13 +184,13 @@
     const factHtml = '<div class="deposit-facts">' + facts.map(function (fact) {
       return '<div><span>' + fact[0] + '</span><b>' + esc(fact[1]) + '</b></div>';
     }).join('') + '</div>';
-    return '<tr class="deposit-detail-row"><td colspan="7"><div class="deposit-detail">' + factHtml + allocationBlock(deposit) + historyBlock(deposit) + '</div></td></tr>';
+    return '<tr class="deposit-detail-row"><td colspan="8"><div class="deposit-detail">' + factHtml + allocationBlock(deposit) + '</div></td></tr>';
   }
 
   function depositsByNextDate() {
     return state.deposits.map(function (deposit, index) {
       return { deposit: deposit, index: index };
-    }).sort(function (a, b) {
+    }).filter(function (item) { return !item.deposit.closed; }).sort(function (a, b) {
       const left = a.deposit.nextDate || '';
       const right = b.deposit.nextDate || '';
       if (left !== right) {
@@ -206,11 +206,11 @@
     const rows = depositsByNextDate().map(function (item) {
       const deposit = item.deposit;
       const opened = openDepositId === deposit.id;
-      const main = '<tr><td><strong>' + esc(deposit.bank || '—') + '</strong>' + (deposit.last4 ? '<br><span class="muted">•••• ' + esc(deposit.last4) + '</span>' : '') + '</td><td>' + esc(deposit.name || '—') + '</td><td>' + esc(deposit.owner || '—') + '</td><td><strong>' + rub(deposit.current) + '</strong><br><span class="positive">' + rateText(deposit.rate) + '% годовых</span></td><td class="deposit-next">' + dateText(deposit.nextDate) + '</td><td>' + esc(purposeText(deposit)) + '</td><td><div class="button-row"><button class="ghost-button" type="button" onclick="toggleDepositDetail(\'' + deposit.id + '\')">' + (opened ? 'Скрыть' : 'Подробнее') + '</button><button class="ghost-button" type="button" onclick="openDepositOperation(\'' + deposit.id + '\')">+ Операция</button><button class="ghost-button" type="button" onclick="openForm(\'deposit\',\'' + deposit.id + '\')">Изменить</button><button class="ghost-button" type="button" onclick="removeItem(\'deposit\',\'' + deposit.id + '\')">Удалить</button></div></td></tr>';
+      const main = '<tr><td><strong>' + esc(deposit.bank || '—') + '</strong>' + (deposit.last4 ? '<br><span class="muted">•••• ' + esc(deposit.last4) + '</span>' : '') + '</td><td>' + esc(deposit.name || '—') + '</td><td>' + esc(deposit.owner || '—') + '</td><td><strong>' + rub(deposit.current) + '</strong><br><span class="positive">' + rateText(deposit.rate) + '% годовых</span></td><td class="deposit-next">' + dateText(deposit.nextDate) + '</td><td>' + rub(deposit.status === 'Получено' ? 0 : deposit.expected) + '</td><td>' + esc(purposeText(deposit)) + '</td><td><div class="button-row"><button class="ghost-button" type="button" onclick="toggleDepositDetail(\'' + deposit.id + '\')">' + (opened ? 'Скрыть' : 'Подробнее') + '</button><button class="ghost-button" type="button" onclick="openForm(\'deposit\',\'' + deposit.id + '\')">Изменить</button><button class="ghost-button" type="button" onclick="openCloseDeposit(\'' + deposit.id + '\')">Закрыть вклад</button><button class="ghost-button" type="button" onclick="removeDepositRecord(\'' + deposit.id + '\')">Удалить</button></div></td></tr>';
       return main + (opened ? detailRow(deposit) : '');
     }).join('');
-    const table = listView('deposit', 'Вклады', 'Сумма на вкладе, назначение денег и история операций', 'Добавить вклад', ['Банк', 'Вклад', 'На кого оформлен', 'Сумма вклада', 'Следующее начисление', 'Назначение'], rows);
-    return table + (typeof depositMonthForecast === 'function' ? depositMonthForecast() : '');
+    const table = listView('deposit', 'Вклады', 'Действующие вклады и ближайшие выплаты', 'Добавить вклад', ['Банк', 'Вклад', 'На кого оформлен', 'Сумма вклада', 'Следующее начисление', 'Ожидается', 'Назначение'], rows);
+    return table + (typeof depositMonthForecast === 'function' ? depositMonthForecast() : '') + archiveBlock();
   }
 
   deposits = depositBoard;
@@ -218,6 +218,90 @@
   window.toggleDepositDetail = function (id) {
     openDepositId = openDepositId === id ? '' : id;
     render();
+  };
+
+  function destinationOptions() {
+    const accounts = state.accounts.map(function (account) {
+      const tail = account.last4 ? ' · •••• ' + account.last4 : '';
+      return '<option value="account|' + esc(account.id) + '">' + esc(accountTitle(account) + tail + ' · ' + rub(account.balance)) + '</option>';
+    }).join('');
+    const safes = (state.safes || []).filter(function (safe) { return (safe.currency || 'RUB') === 'RUB'; }).map(function (safe) {
+      const balance = (safe.operations || []).reduce(function (sum, op) {
+        const amount = Math.abs(num(op.amount));
+        return sum + (op.direction === 'out' ? -amount : amount);
+      }, 0);
+      return '<option value="safe|' + esc(safe.id) + '">Сейф · ' + esc(safe.name || 'Сейф') + ' · ' + rub(balance) + '</option>';
+    }).join('');
+    return accounts + safes + '<option value="other">Другое / не учитывать перевод</option>';
+  }
+
+  function archiveBlock() {
+    const items = state.deposits.filter(function (deposit) { return deposit.closed; }).slice().sort(function (a, b) {
+      return String(b.closedAt || '').localeCompare(String(a.closedAt || ''));
+    });
+    const rows = items.map(function (deposit) {
+      const where = deposit.destination && deposit.destination.label ? deposit.destination.label : '—';
+      return '<tr><td><strong>' + esc(deposit.bank || '—') + '</strong></td><td>' + esc(deposit.name || '—') + '</td><td>' + (deposit.last4 ? '•••• ' + esc(deposit.last4) : '—') + '</td><td>' + rub(deposit.current) + '</td><td class="deposit-next">' + dateText(deposit.open) + '</td><td class="deposit-next">' + dateText(deposit.closedAt) + '</td><td>' + rub(deposit.closeInterest) + '</td><td>' + esc(where) + '</td></tr>';
+    }).join('');
+    const count = items.length;
+    const word = typeof plural === 'function' ? plural(count, 'закрытый', 'закрытых', 'закрытых') : 'закрытых';
+    return '<details class="deposit-archive panel"><summary>Архив вкладов · ' + count + ' ' + word + '</summary><div class="table-wrap"><table class="data-table"><thead><tr><th>Банк</th><th>Название вклада</th><th>Последние 4 цифры</th><th>Сумма вклада</th><th>Дата открытия</th><th>Дата закрытия</th><th>Получено процентов</th><th>Куда поступили деньги</th></tr></thead><tbody>' + (rows || '<tr><td colspan="8"><div class="empty">Закрытых вкладов пока нет</div></td></tr>') + '</tbody></table></div></details>';
+  }
+
+  window.removeDepositRecord = function (id) {
+    if (!confirm('Удалить ошибочно созданный вклад? Для реального закрытия используйте «Закрыть вклад».')) return;
+    state.deposits = state.deposits.filter(function (item) { return item.id !== id; });
+    save();
+    render();
+  };
+
+  window.openCloseDeposit = function (id) {
+    const deposit = state.deposits.find(function (item) { return item.id === id; });
+    if (!deposit || deposit.closed) return;
+    const interestDefault = deposit.status === 'Получено' ? 0 : num(deposit.expected);
+    const interestValue = typeof formatMoneyInput === 'function' ? formatMoneyInput(interestDefault) : interestDefault;
+    document.getElementById('modal-root').innerHTML = '<div class="modal-backdrop" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-header"><h2>Закрыть вклад</h2><button class="close" type="button" onclick="closeModal()">×</button></div><form id="close-deposit-form"><div class="modal-body"><div class="form-grid"><div class="form-field"><label>Банк</label><input value="' + esc(deposit.bank || '—') + '" readonly></div><div class="form-field"><label>Название вклада</label><input value="' + esc(deposit.name || '—') + '" readonly></div><div class="form-field"><label>Последние 4 цифры</label><input value="' + esc(deposit.last4 ? '•••• ' + deposit.last4 : '—') + '" readonly></div><div class="form-field"><label>Сумма вклада</label><input value="' + esc(rub(deposit.current)) + '" readonly></div><div class="form-field"><label>Дата закрытия</label><input name="closedAt" type="date" value="' + isoDate(today) + '"></div><div class="form-field"><label>Фактически полученные проценты</label><input name="closeInterest" type="text" inputmode="decimal" autocomplete="off" value="' + esc(interestValue) + '"></div><div class="form-field full deposit-close-total"><label>Итого к получению</label><strong class="deposit-payout">' + rub(moneyOk(num(deposit.current) + num(interestDefault))) + '</strong></div><div class="form-field full"><label>Куда поступили деньги?</label><select name="destination"><option value="">Выберите</option>' + destinationOptions() + '</select></div></div></div><div class="modal-footer"><button type="button" class="ghost-button" onclick="closeModal()">Отмена</button><button class="primary-button">Закрыть вклад</button></div></form></div></div>';
+    const form = document.getElementById('close-deposit-form');
+    const interestInput = form.querySelector('[name="closeInterest"]');
+    const payout = form.querySelector('.deposit-payout');
+    const refresh = function () { payout.textContent = rub(moneyOk(num(deposit.current) + num(interestInput.value))); };
+    interestInput.addEventListener('input', refresh);
+    form.onsubmit = function (event) {
+      event.preventDefault();
+      if (form.dataset.saving === '1' || deposit.closed) return;
+      const date = form.querySelector('[name="closedAt"]').value;
+      const interest = moneyOk(interestInput.value);
+      const target = form.querySelector('[name="destination"]').value;
+      if (!date) { alert('Укажите дату закрытия.'); return; }
+      if (interest < 0) { alert('Проценты не могут быть отрицательными.'); return; }
+      if (!target) { alert('Укажите, куда поступили деньги.'); return; }
+      const payoutAmount = moneyOk(num(deposit.current) + interest);
+      const kind = target === 'other' ? 'other' : target.split('|')[0];
+      const targetId = target === 'other' ? '' : target.split('|').slice(1).join('|');
+      let label = 'Другое / не учитывать перевод';
+      if (kind === 'account') {
+        const account = state.accounts.find(function (item) { return item.id === targetId; });
+        if (!account) { alert('Выберите карту или счёт.'); return; }
+        account.balance = moneyOk(num(account.balance) + payoutAmount);
+        label = accountTitle(account) + (account.last4 ? ' · •••• ' + account.last4 : '');
+      } else if (kind === 'safe') {
+        const safe = (state.safes || []).find(function (item) { return item.id === targetId; });
+        if (!safe || (safe.currency || 'RUB') !== 'RUB') { alert('Выберите рублёвый сейф.'); return; }
+        if (!Array.isArray(safe.operations)) safe.operations = [];
+        safe.operations.push({ id: uid(), date: date, amount: payoutAmount, currency: 'RUB', direction: 'in', comment: 'Закрытие вклада «' + (deposit.name || deposit.bank || '') + '»' });
+        label = 'Сейф · ' + (safe.name || 'Сейф');
+      }
+      form.dataset.saving = '1';
+      deposit.closed = true;
+      deposit.closedAt = date;
+      deposit.closeInterest = interest;
+      deposit.payout = payoutAmount;
+      deposit.destination = { kind: kind, id: targetId, label: label };
+      openDepositId = '';
+      save();
+      closeModal();
+      render();
+    };
   };
 
   window.openDepositOperation = function (depositId) {
@@ -326,7 +410,7 @@
         alert('Выберите обязательство для назначения денег.');
         return;
       }
-      const snapshot = deposit ? { movements: (deposit.movements || []).slice(), initial: deposit.initial, allocations: (deposit.allocations || []).slice() } : null;
+      const snapshot = deposit ? { movements: (deposit.movements || []).slice(), initial: deposit.initial, allocations: (deposit.allocations || []).slice(), closed: deposit.closed, closedAt: deposit.closedAt, closeInterest: deposit.closeInterest, payout: deposit.payout, destination: deposit.destination } : null;
       const before = state.deposits.map(function (item) { return item.id; });
       previousSubmit.call(form, event);
       const saved = id ? state.deposits.find(function (item) { return item.id === id; }) : state.deposits.filter(function (item) { return before.indexOf(item.id) < 0; })[0];
@@ -348,6 +432,13 @@
         saved.allocations = [first];
       } else saved.allocations = [];
       if (!Array.isArray(saved.movements)) saved.movements = [];
+      if (snapshot && snapshot.closed) {
+        saved.closed = true;
+        saved.closedAt = snapshot.closedAt;
+        saved.closeInterest = snapshot.closeInterest;
+        saved.payout = snapshot.payout;
+        saved.destination = snapshot.destination;
+      }
       save();
       render();
     };

@@ -1012,7 +1012,7 @@
       document.getElementById('app-view').innerHTML = safeView();
       document.querySelectorAll('.nav-item').forEach(function (button) { button.classList.toggle('active', button.dataset.view === 'safe'); });
       document.getElementById('page-title').textContent = 'Сейф';
-      document.getElementById('deposit-count').textContent = state.deposits.length;
+      document.getElementById('deposit-count').textContent = state.deposits.filter(function (item) { return !item.closed; }).length;
       document.getElementById('debt-count').textContent = obligations().length;
       document.getElementById('today-label').textContent = dateText(isoDate(today));
       return;
@@ -1030,7 +1030,7 @@
   function financialCoverage() {
     ensureCapitalState();
     const accounts = state.accounts.filter(usableForObligations).reduce(function (sum, item) { return sum + num(item.balance); }, 0);
-    const deposits = state.deposits.filter(usableForObligations).reduce(function (sum, item) { return sum + num(item.current); }, 0);
+    const deposits = state.deposits.filter(function (item) { return usableForObligations(item) && !item.closed; }).reduce(function (sum, item) { return sum + num(item.current); }, 0);
     let safe = 0;
     (state.safes || []).forEach(function (item) {
       if (!usableForObligations(item)) return;
