@@ -484,17 +484,30 @@
     return baseHistory() + '<div class="panel property-history"><h3>История имущества</h3><h4>Изменения статусов</h4>' + (statusRows || '<div class="empty">История статусов появится после изменений</div>') + '<h4>История курсов и переоценки</h4>' + (rateRows || '<div class="empty">История курсов появится для валютного имущества</div>') + '</div>';
   };
 
-  function dashboardDateKey(daysAhead) {
-    return isoDate(new Date(today.getFullYear(), today.getMonth(), today.getDate() + daysAhead));
-  }
-  function inCurrentMonth(date) {
-    return !!date && String(date).slice(0, 7) === isoDate(today).slice(0, 7);
-  }
-  function inNext30Days(date) {
-    if (!date) return false;
-    const todayKey = isoDate(today);
-    return date >= todayKey && date <= dashboardDateKey(30);
-  }
+  const baseExpectedThisMonth = expectedThisMonth;
+  expectedThisMonth = function () {
+    let sum = baseExpectedThisMonth();
+    state.assets.forEach(function (asset) {
+      const rent = asset.rent || {};
+      const liveRent = (asset.usage || asset.usageStatus) === 'Сдаётся в аренду';
+      if (liveRent) {
+        const plannedDate = rent.nextDate || rent.startDate || '';
+        let plannedDateCovered = false;
+        (rent.payments || []).forEach(function (payment) {
+          if (payment.date === plannedDate) plannedDateCovered = true;
+          if (payment.status !== 'Получено' && inCurrentMonth(payment.date)) sum += num(payment.amount);
+        });
+        if (!plannedDateCovered && inCurrentMonth(plannedDate) && num(rent.amount)) sum += num(rent.amount);
+      }
+      (asset.parts || []).forEach(function (part) {
+        if (part.usage !== 'Сдаётся в аренду') return;
+        (part.rentPayments || []).forEach(function (payment) {
+          if (payment.status !== 'Получено' && inCurrentMonth(payment.date)) sum += num(payment.amount);
+        });
+      });
+    });
+    return sum;
+  };
   function rentalSummary() {
     let depositReceived = 0;
     let rentReceived = 0;
@@ -502,7 +515,7 @@
     let rentExpected = 0;
     state.deposits.forEach(function (deposit) {
       if (inCurrentMonth(deposit.nextDate)) depositReceived += num(deposit.received);
-      if (deposit.status !== 'Получено' && inNext30Days(deposit.nextDate)) depositExpected += num(deposit.expected);
+      if (deposit.status !== 'Получено' && inCurrentMonth(deposit.nextDate)) depositExpected += num(deposit.expected);
     });
     state.assets.forEach(function (asset) {
       const rent = asset.rent || {};
@@ -517,22 +530,22 @@
           if (inCurrentMonth(payment.receivedAt || payment.date)) rentReceived += num(payment.amount);
           return;
         }
-        if (liveRent && inNext30Days(payment.date)) rentExpected += num(payment.amount);
+        if (liveRent && inCurrentMonth(payment.date)) rentExpected += num(payment.amount);
       });
-      if (liveRent && !plannedDateCovered && inNext30Days(plannedDate) && num(rent.amount)) rentExpected += num(rent.amount);
+      if (liveRent && !plannedDateCovered && inCurrentMonth(plannedDate) && num(rent.amount)) rentExpected += num(rent.amount);
       (asset.parts || []).forEach(function (part) {
         (part.rentPayments || []).forEach(function (payment) {
           if (payment.status === 'Получено') {
             if (inCurrentMonth(payment.receivedAt || payment.date)) rentReceived += num(payment.amount);
             return;
           }
-          if (part.usage === 'Сдаётся в аренду' && inNext30Days(payment.date)) rentExpected += num(payment.amount);
+          if (part.usage === 'Сдаётся в аренду' && inCurrentMonth(payment.date)) rentExpected += num(payment.amount);
         });
       });
     });
     const receivedTotal = depositReceived + rentReceived;
     const expectedTotal = depositExpected + rentExpected;
-    return '<section class="rental-summary panel"><div class="dash-panel-heading"><div><p class="eyebrow">ДОХОД ОТ КАПИТАЛА</p><h3>Текущие поступления</h3></div></div><div class="rental-summary-grid"><div><span>Доход получен в этом месяце</span><strong class="teal">' + rub(receivedTotal) + '</strong><small>Проценты по вкладам ' + rub(depositReceived) + ' · аренда ' + rub(rentReceived) + '</small></div><div><span>Ожидается в ближайшие 30 дней</span><strong class="orange">' + rub(expectedTotal) + '</strong><small>Вклады ' + rub(depositExpected) + ' · аренда ' + rub(rentExpected) + '</small></div></div></section>';
+    return '<section class="rental-summary panel"><div class="dash-panel-heading"><div><p class="eyebrow">ДОХОД ОТ КАПИТАЛА</p><h3>Текущие поступления</h3></div></div><div class="rental-summary-grid"><div><span>Доход получен в этом месяце</span><strong class="teal">' + rub(receivedTotal) + '</strong><small>Проценты по вкладам ' + rub(depositReceived) + ' · аренда ' + rub(rentReceived) + '</small></div><div><span>Ожидается в ' + monthInName() + '</span><strong class="orange">' + rub(expectedTotal) + '</strong><small>' + currentMonthRangeText() + ' · вклады ' + rub(depositExpected) + ' · аренда ' + rub(rentExpected) + '</small></div></div></section>';
   }
   function refreshRentalSummary() { if (typeof activeView === 'undefined' || activeView !== 'dashboard') return; const view = document.getElementById('app-view'); if (!view || view.querySelector('.rental-summary')) return; const shell = view.querySelector('.dashboard-shell'); if (shell) shell.insertAdjacentHTML('afterbegin', rentalSummary()); }
   window.refreshRentalSummary = refreshRentalSummary;
@@ -549,7 +562,7 @@
       document.getElementById('deposit-count').textContent = state.deposits.length;
       document.getElementById('debt-count').textContent = obligations().length;
       updateRentCount();
-      document.getElementById('today-label').textContent = today.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+      document.getElementById('today-label').textContent = dateText(isoDate(today));
       return;
     }
     baseRender();

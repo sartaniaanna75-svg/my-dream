@@ -1014,7 +1014,7 @@
       document.getElementById('page-title').textContent = 'Сейф';
       document.getElementById('deposit-count').textContent = state.deposits.length;
       document.getElementById('debt-count').textContent = obligations().length;
-      document.getElementById('today-label').textContent = today.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+      document.getElementById('today-label').textContent = dateText(isoDate(today));
       return;
     }
     baseRender();
