@@ -10,8 +10,39 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="styles-overrides.css">
+  <style>
+    body:not(.auth-ready) .app-shell,
+    body:not(.auth-ready) #modal-root { display: none !important; }
+    body.auth-ready #auth-gate { display: none !important; }
+    #auth-gate { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; background: #101820; color: #f4f7fb; font-family: "DM Sans", sans-serif; }
+    #auth-form { width: min(100%, 380px); display: grid; gap: 14px; }
+    #auth-form h1 { margin: 0; font-family: Manrope, sans-serif; font-size: 32px; }
+    #auth-form p { margin: 0; color: #9aa8b8; }
+    #auth-form label { display: grid; gap: 6px; font-size: 14px; }
+    #auth-form input { height: 46px; border: 1px solid #31445c; border-radius: 12px; background: #1b2838; color: #f4f7fb; padding: 0 14px; font: inherit; }
+    #auth-form button { height: 46px; border: 0; border-radius: 12px; background: #ff9e3d; color: #1b140c; font: inherit; font-weight: 700; cursor: pointer; }
+    #auth-form button:disabled { opacity: .6; cursor: default; }
+    #auth-error { min-height: 1.2em; color: #ff8d86; }
+    .topbar, .top-actions, .auth-menu { overflow: visible; }
+    .auth-menu { position: relative; }
+    .auth-menu-panel { position: absolute; top: calc(100% + 8px); right: 0; z-index: 50; min-width: 168px; padding: 6px; border-radius: 12px; background: #1c2838; border: 1px solid #3a4c62; box-shadow: 0 14px 32px rgba(0,0,0,.35); }
+    .auth-menu-panel[hidden] { display: none; }
+    #auth-logout { width: 100%; margin: 0; padding: 10px 12px; border: 0; border-radius: 8px; background: transparent; color: #f4f7fb; text-align: left; font: inherit; font-weight: 600; cursor: pointer; }
+    #auth-logout:hover { background: rgba(255,255,255,.08); }
+    #auth-logout:disabled { opacity: .6; cursor: default; }
+  </style>
 </head>
 <body>
+  <div id="auth-gate">
+    <form id="auth-form">
+      <h1>Вход</h1>
+      <p>Личный финансовый кабинет</p>
+      <label>Email<input type="email" name="email" autocomplete="username" required></label>
+      <label>Пароль<input type="password" name="password" autocomplete="current-password" required></label>
+      <p id="auth-error" role="alert"></p>
+      <button type="submit">Войти</button>
+    </form>
+  </div>
   <div class="app-shell">
     <aside class="sidebar">
       <div class="brand"><span class="brand-mark">₽</span><span>Финансы<br><small>личный кабинет</small></span></div>
@@ -30,11 +61,13 @@
       <div class="sidebar-bottom"><button class="nav-item" data-view="settings"><span>⚙</span> Настройки</button><div class="privacy-note">Данные хранятся только<br>в этом браузере</div></div>
     </aside>
     <main class="main-content">
-      <header class="topbar"><div><p class="eyebrow" id="page-eyebrow">ФИНАНСОВЫЙ КАБИНЕТ</p><h1 id="page-title">Добрый день</h1></div><div class="top-actions"><span class="today" id="today-label"></span><button class="avatar">А</button></div></header>
+      <header class="topbar"><div><p class="eyebrow" id="page-eyebrow">ФИНАНСОВЫЙ КАБИНЕТ</p><h1 id="page-title">Добрый день</h1></div><div class="top-actions"><span class="today" id="today-label"></span><div class="auth-menu"><button type="button" class="avatar" id="auth-menu-button" aria-haspopup="menu" aria-expanded="false" aria-controls="auth-menu-panel">А</button><div class="auth-menu-panel" id="auth-menu-panel" role="menu" hidden><button type="button" id="auth-logout" role="menuitem">Выйти</button></div></div></div></header>
       <section id="app-view"></section>
     </main>
   </div>
   <div id="modal-root"></div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-config.js"></script>
   <script src="app.js"></script>
   <script src="compact-obligations.js"></script>
   <script src="rental-enhancements.js"></script>
@@ -43,5 +76,11 @@
   <script src="fx-obligations.js"></script>
   <script src="income-analytics.js"></script>
   <script src="rental-lifecycle.js"></script>
+  <script src="cabinet-cloud-copy.js"></script>
+  <script src="cabinet-cloud-compare.js"></script>
+  <script src="cabinet-cloud-load.js"></script>
+  <script src="cabinet-cloud-save-test.js"></script>
+  <script src="cabinet-cloud-autosave.js"></script>
+  <script src="auth-gate.js"></script>
 </body>
 </html>
