@@ -451,3 +451,27 @@ select.fx-currency-store{display:none!important}
 .rent-alert-row span{display:block;margin-top:4px;color:#ffd48a;font-size:13px;font-weight:700}
 .rent-alert-row small{display:block;margin-top:3px;color:#f3e6d0;font-weight:600}
 @media(max-width:720px){.rent-board{grid-template-columns:1fr 1fr}.rent-stats{grid-template-columns:1fr 1fr}.rent-alert-row,.rent-row-actions{align-items:flex-start;flex-wrap:wrap}}
+html,body{background:#101820!important;color:#f4f7fb!important}body{background:radial-gradient(circle at 86% -10%,rgba(255,168,92,.2) 0,transparent 32%),radial-gradient(circle at 8% 0,rgba(255,176,110,.08) 0,transparent 24%),linear-gradient(180deg,#161820 0,#101820 46%,#0e161f 100%)!important}
+.sidebar{background:linear-gradient(180deg,#241e22 0,#161e2a 32%,#121922 100%)!important;border-color:#2a3848!important}
+.sidebar:after{background:linear-gradient(180deg,transparent,#121922 92%),url('assets/sidebar-mountains.svg') bottom/cover no-repeat!important}
+.nav-item{color:#c5ced8!important}.nav-item span{color:#9aa8b8!important}.nav-item:hover{background:#243044!important;color:#fff!important}
+.nav-item.active,.nav-item.active:hover{background:linear-gradient(105deg,#ffb64e,#ff7648)!important;color:#fff!important;border-color:#ffc05e!important}
+.nav-item.active span{color:#fff!important}.nav-count{background:#2a3848!important;color:#d5dde6!important}
+.topbar{border-color:#2a3848!important}.today,.section-heading p,.metric-label,.metric-sub,.panel-head span,.dash-stat-label,.obligation-summary-item span,.obligation-summary-item small,.asset-summary span,.asset-summary small,.income-score small,.income-score>span{color:#9aa8b8!important}
+.icon-button,.avatar{background:#1c2838!important;color:#e7eef6!important;border-color:#3a4c62!important}
+.ghost-button{background:#243044!important;border-color:#3a4c62!important;color:#e7eef6!important}
+.metric,.panel,.forecast-card,.obligation-card,.obligation-summary-item,.dash-stat,.dash-goal,.dash-goal.panel{background:linear-gradient(165deg,#322c2e 0%,#243044 46%,#1b2838 100%)!important;border-color:#31445c!important;color:#f4f7fb!important;box-shadow:0 12px 28px #070b1244!important}
+.dash-goal,.dash-goal.panel{background:linear-gradient(90deg,#322c2ee8 0%,#1b2838c4 58%,#1b283866 100%),url('assets/mountains.svg') right center/cover no-repeat!important}
+.dash-goal-facts div,.dash-obligation,.obligation-totals div,.asset-summary>div,.asset-summary>.asset-change,.income-structure-grid div,.income-compare-grid div,.income-score div,.rental-summary-grid div,.coverage-facts div,.ob-metrics div,.due-prepare div,.asset-metrics div,.asset-value-block div,.asset-revalue,.asset-extra div,.rent-board article,.rent-stats div,.rent-empty,.rent-life-row,.asset-part-card,.fx-calc,.payment-plan,.fx-grid label{background:linear-gradient(180deg,#2c282c,#223044)!important;border-color:#3a5168!important}
+.rent-row{background:linear-gradient(180deg,#2c282c,#223044)!important}
+.data-table th{background:#182432!important;color:#9aa8b8!important;border-color:#31445c!important}.data-table td{background:#1b2838!important;color:#e7eef6!important;border-color:#31445c!important}.data-table tr:hover td{background:#243044!important}.table-wrap{border-color:#31445c!important}
+.modal{background:#1b2838!important;border-color:#3a5168!important}.modal-backdrop{background:#070b12cc!important}
+.form-field input,.form-field select,.form-field textarea,.payment-row input,.payment-row select,.income-filters select,.plan-rate-edit input,.part-row input,.part-row select{background:#152030!important;color:#f4f7fb!important;border-color:#3a5168!important}
+.payment-stage{background:#223044!important;border-color:#3a5168!important}.payment-stage.stage-next{background:#3a2e34!important;border-color:#ff9e3d!important}.payment-stage.stage-paid{background:#1a3330!important;border-color:#2f6b58!important}
+.obligation-period button{background:#1c2838!important;border-color:#3a5168!important;color:#d5dde6!important}.obligation-period button.is-on{background:linear-gradient(105deg,#ffb64e,#ff7648)!important;color:#1b2430!important;border-color:#ffc05e!important}
+.nearest-payment,.compact-obligation-card .nearest-payment,.ob-prepare{background:#2c2630!important;border-color:#ff9e3d!important}
+.metric .positive,.summary-good strong,.teal,.dash-stat.positive strong,.income-score .positive,.income-hover .positive,.income-compare-grid .positive{color:#49d6ae!important}
+.metric .danger,.summary-danger strong,.income-score .danger,.income-hover .danger,.income-compare-grid .danger{color:#ff8d86!important}
+.income-score div:has(strong.danger),.income-compare-grid div:has(.danger),.metric:has(.metric-value.danger){background:#3d2428!important;border-color:#a24a4a!important}
+.income-score div:has(strong.positive),.income-compare-grid div:has(.positive),.metric:has(.metric-value.positive){background:#17352e!important;border-color:#2f7a64!important}
+.obligation-totals span{color:#9aa8b8!important}.obligation-totals strong{color:#fff!important}.obligation-totals .danger{color:#ff8d86!important}
