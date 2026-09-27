@@ -171,7 +171,7 @@
 .asset-open-note{margin:12px 0 0;color:#a9bde2;font-size:12px}
 @media(max-width:1100px){.asset-summary{grid-template-columns:1fr 1fr}.asset-row-main{grid-template-columns:1fr auto auto}.asset-row-facts{grid-column:1/-1}}
 @media(max-width:720px){.asset-summary,.asset-row-facts,.asset-extra{grid-template-columns:1fr 1fr}.asset-row-main{grid-template-columns:1fr}.asset-status,.asset-more{justify-self:start}}
-.purchase-only[hidden],.usage-only[hidden],.rent-any[hidden],.rent-live[hidden],.fx-only[hidden],.asset-parts[hidden],.form-field[hidden],.payment-section[hidden]{display:none!important}
+.purchase-only[hidden],.usage-only[hidden],.rent-any[hidden],.rent-live[hidden],.fx-only[hidden],.asset-parts[hidden],.form-field[hidden],.payment-section[hidden],.fx-asset-note[hidden]{display:none!important}
 .asset-parts{grid-column:1/-1;margin-top:12px;padding:12px;border:1px dashed #ff9e3d88;border-radius:12px;background:#12315f}
 .part-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
 .part-row input,.part-row select{width:140px;padding:8px;border:1px solid #2b5aa8;border-radius:8px;background:#081e58;color:#fff}
@@ -206,6 +206,45 @@
 .deposit-detail{padding:4px 2px 8px}.deposit-detail h4{margin:12px 0 4px;font-size:11px;letter-spacing:.06em;text-transform:uppercase}.deposit-facts{display:flex;flex-wrap:wrap;gap:8px 18px;margin-bottom:6px}.deposit-facts div{min-width:140px}.deposit-facts span{display:block;font-size:11px}.deposit-facts b{font-size:13px}.deposit-detail .plus{color:#55e0bd}.deposit-detail .minus{color:#ff9b8a}.deposit-detail .stat-row small{display:block}.deposit-specific{display:contents}.deposit-specific[hidden],.deposit-op-only[hidden],.account-savings-only[hidden]{display:none!important}.deposit-link-note{margin-top:12px}
 .deposit-archive{margin-top:16px;padding:0 16px 4px}.deposit-archive summary{padding:14px 0;font-weight:800;cursor:pointer}.deposit-archive[open]{padding-bottom:16px}.deposit-close-total{grid-column:1/-1}.deposit-payout{display:block;font:800 22px Manrope;margin-top:4px}
 .deposit-owner-filter{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:6px 0 8px}.deposit-owner-filter span{color:#9db1d5;font-size:12px}.deposit-owner-filter button{padding:6px 10px;font-size:12px;border-radius:8px}.deposit-owner-filter button.is-active{background:#ffb449!important;border-color:#ffc15c!important;color:#1a2744!important}
+.fx-legacy{display:none!important}
+.fx-calc{grid-column:1/-1;margin:8px 0 4px;padding:12px;border:1px solid #2858a8;border-radius:12px;background:#0c2d68}
+.fx-calc[hidden]{display:none!important}
+select.fx-currency-store{display:none!important}
+.fx-other-currency[hidden],.fx-pay-other[hidden]{display:none!important}
+.fx-calc h4{margin:0 0 10px;color:#fff;font-size:15px}
+.fx-readout{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px}
+.fx-readout span,.fx-leg-preview span{display:block;color:#9db1d5;font-size:11px}
+.fx-readout strong,.fx-leg-preview strong{color:#fff;font-size:14px}
+.fx-rate-slot .form-field{margin:0 0 10px}
+.fx-shift{margin:8px 0 0;color:#ffd7a8;font-size:12px;line-height:1.45}
+.fx-shift[hidden]{display:none!important}
+.fx-legs-rows{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.fx-leg{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) minmax(0,.8fr) auto;gap:8px;align-items:end;padding-top:8px;border-top:1px solid #1d4380}
+.fx-leg label{display:flex;flex-direction:column;gap:4px;color:#9db1d5;font-size:11px}
+.fx-leg input,.fx-leg select{width:100%}
+.fx-leg-preview{grid-column:1/-1;margin:0;color:#dce8ff;font-size:12px}
+.fx-add-leg{margin-top:10px}
+.fx-pay-panel{margin-top:10px;padding-top:10px;border-top:1px solid #1d4380}
+.fx-pay-panel[hidden]{display:none!important}
+.fx-pay-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.fx-pay-grid label{display:flex;flex-direction:column;gap:4px;color:#9db1d5;font-size:11px}
+.fx-pay-grid input,.fx-pay-grid select{width:100%}
+.fx-pay-save{margin-top:8px}
+.fx-history{margin-top:12px}
+.fx-history h4{margin:0 0 8px;color:#fff;font-size:13px}
+.fx-history-head,.fx-history-row{display:grid;grid-template-columns:72px 1.2fr .7fr 1fr;gap:8px;align-items:center}
+.fx-history-head{color:#9db1d5;font-size:11px}
+.fx-history-row{color:#fff;font-size:13px;padding:4px 0;border-top:1px solid #1d4380}
+.fx-history-total{margin:6px 0 0;color:#dce8ff;font-size:13px}
+.fx-history-empty{margin:8px 0 0;color:#9db1d5;font-size:12px}
+.fx-asset-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px 14px;width:100%;margin-top:8px;grid-column:1/-1}
+.fx-asset-facts span{display:block;color:#9db1d5;font-size:11px}
+.fx-asset-facts strong{color:#fff;font-size:14px}
+.asset-row-main .fx-history{grid-column:1/-1}
+@media(max-width:720px){.fx-pay-grid,.fx-asset-facts,.fx-history-head,.fx-history-row{grid-template-columns:1fr}}
+.fx-card-lines{margin:8px 0;color:#dce8ff;font-size:13px;line-height:1.45}
+.fx-card-lines b{color:#fff}
+@media(max-width:720px){.fx-readout,.fx-leg{grid-template-columns:1fr}}
 .deposit-months{margin-top:16px}
 .deposit-months .section-heading{margin-bottom:8px}
 .deposit-months .stat-row{align-items:center;gap:12px}

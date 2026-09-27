@@ -1,5 +1,5 @@
 (function () {
-  const currencies = ['RUB', 'USD', 'EUR'];
+  const currencies = ['RUB', 'USD', 'EUR', 'AED'];
 
   function esc(value) {
     return String(value ?? '').replace(/[&<>"']/g, function (ch) {
@@ -27,7 +27,7 @@
     state.safes.forEach(function (safe) {
       if (!safe.id) { safe.id = uid(); changed = true; }
       if (!safe.name) { safe.name = 'Сейф'; changed = true; }
-      if (currencies.indexOf(safe.currency) < 0) { safe.currency = 'RUB'; changed = true; }
+      if (!safe.currency) { safe.currency = 'RUB'; changed = true; }
       if (safe.comment == null) { safe.comment = ''; changed = true; }
       if (safe.coverObligations === undefined) { safe.coverObligations = true; changed = true; }
       if (!Array.isArray(safe.operations)) { safe.operations = []; changed = true; }
@@ -42,6 +42,7 @@
     if (changed) save();
   }
 
+  window.liveRate = liveRate;
   function liveRate(currency, asset) {
     if (!currency || currency === 'RUB') return 1;
     const cabinet = num(state.fx && state.fx[currency]);
@@ -140,6 +141,7 @@
   }
 
   function obligationRemainingRub(item) {
+    if (item && item.kind === 'asset' && item.asset && typeof window.fxObligationRub === 'function') return window.fxObligationRub(item.asset);
     if (item && item.kind === 'asset' && item.asset) return contractAmountRub(item.asset, item.remaining);
     return num(item && item.remaining);
   }
@@ -268,7 +270,9 @@
     ensureCapitalState();
     const safe = state.safes.find(function (item) { return item.id === id; }) || { name: '', currency: 'USD', comment: '', operations: [] };
     const locked = (safe.operations || []).length > 0;
-    const options = currencies.map(function (currency) {
+    const currencyChoices = currencies.slice();
+    if (safe.currency && currencyChoices.indexOf(safe.currency) < 0) currencyChoices.push(safe.currency);
+    const options = currencyChoices.map(function (currency) {
       return '<option ' + (safe.currency === currency ? 'selected' : '') + '>' + currency + '</option>';
     }).join('');
     modalShell(id ? 'Изменить сейф' : 'Новый сейф',
@@ -482,6 +486,7 @@
     const currentSub = valueCode === 'RUB' ? '' : moneyOriginal(asset.value, valueCode);
     const remainMain = moneyOriginal(assetRemaining(asset), foreign ? currency : 'RUB');
     const remainSub = foreign ? prepareText : '';
+    const fxFacts = typeof window.fxAssetCardHtml === 'function' ? window.fxAssetCardHtml(asset) : '';
     const payFacts = showPayFacts ? '<div><span>Фактически вложено</span><strong>' + actualSpentText(asset) + '</strong></div><div><span>Осталось оплатить</span><strong>' + remainMain + '</strong>' + (remainSub ? '<small>' + remainSub + '</small>' : '') + '</div>' : '';
     const statusClass = statusLabel === 'Покупается' ? 'tag-yellow' : statusLabel === 'Другое' ? 'tag-blue' : 'tag-green';
     const detailMetrics = purchaseOpen ? metrics : '';
@@ -496,7 +501,7 @@
       asset.comment ? ['Комментарий', asset.comment] : null
     ].filter(Boolean);
     const extraBlock = extras.length ? '<div class="asset-extra">' + extras.map(function (row) { return '<div><span>' + esc(row[0]) + '</span><strong>' + esc(row[1]) + '</strong></div>'; }).join('') + '</div>' : '';
-    return '<article class="asset-row panel"><div class="asset-row-main"><div class="asset-row-title"><strong>' + esc(asset.name) + '</strong><span>' + meta + '</span></div><div class="asset-row-facts"><div><span>Текущая стоимость</span><strong>' + currentMain + '</strong>' + (currentSub ? '<small>' + currentSub + '</small>' : '') + '</div>' + payFacts + '</div><span class="tag asset-status ' + statusClass + '">' + esc(statusLabel) + '</span><button type="button" class="ghost-button asset-more" aria-expanded="false" onclick="toggleAssetDetails(\'' + asset.id + '\',this)">Подробнее</button></div><div class="asset-details" id="asset-details-' + asset.id + '" hidden><div class="asset-details-head"><p class="eyebrow">' + (foreign ? 'ЗАРУБЕЖНОЕ ИМУЩЕСТВО' : 'РУБЛИ') + '</p>' + actions('asset', asset.id) + '</div>' + detailMetrics + valueBlock + (purchaseOpen ? revalueBlock : '') + extraBlock + partsView + historyView + payNote + '</div></article>';
+    return '<article class="asset-row panel"><div class="asset-row-main"><div class="asset-row-title"><strong>' + esc(asset.name) + '</strong><span>' + meta + '</span></div><div class="asset-row-facts"><div><span>Текущая стоимость</span><strong>' + currentMain + '</strong>' + (currentSub ? '<small>' + currentSub + '</small>' : '') + '</div>' + payFacts + '</div>' + fxFacts + '<span class="tag asset-status ' + statusClass + '">' + esc(statusLabel) + '</span><button type="button" class="ghost-button asset-more" aria-expanded="false" onclick="toggleAssetDetails(\'' + asset.id + '\',this)">Подробнее</button></div><div class="asset-details" id="asset-details-' + asset.id + '" hidden><div class="asset-details-head"><p class="eyebrow">' + (foreign ? 'ЗАРУБЕЖНОЕ ИМУЩЕСТВО' : 'РУБЛИ') + '</p>' + actions('asset', asset.id) + '</div>' + detailMetrics + valueBlock + (purchaseOpen ? revalueBlock : '') + extraBlock + partsView + historyView + payNote + '</div></article>';
   }
 
   window.toggleAssetDetails = function (id, button) {
@@ -552,7 +557,7 @@
       const spent = actualRubSpent(asset);
       invested += spent.total;
       if (!spent.known) investedKnown = false;
-      remaining += contractAmountRub(asset, assetRemaining(asset));
+      remaining += typeof window.fxObligationRub === 'function' ? window.fxObligationRub(asset) : contractAmountRub(asset, assetRemaining(asset));
     });
     const changeClass = change > 0 ? 'positive' : change < 0 ? 'negative' : '';
     const summary = '<div class="asset-summary"><div><span>Общая стоимость имущества</span><strong>' + rub(totalValue) + '</strong></div><div><span>Фактически вложено</span><strong>' + rub(invested) + '</strong>' + (investedKnown ? '' : '<small>есть платежи без суммы в ₽</small>') + '</div><div><span>Осталось оплатить</span><strong>' + rub(remaining) + '</strong></div><div><span>Изменение стоимости</span><strong class="' + changeClass + '">' + signedRub(change) + '</strong></div></div>';
@@ -575,7 +580,9 @@
     const options = ['Предстоит', 'Оплачено', 'Просрочено'].map(function (item) {
       return '<option ' + (status === item ? 'selected' : '') + '>' + item + '</option>';
     }).join('');
-    const currencies = ['RUB', 'USD', 'EUR'].map(function (item) {
+    const currencyCodes = ['RUB', 'USD', 'EUR', 'AED'];
+    if (currency && currencyCodes.indexOf(currency) < 0) currencyCodes.push(currency);
+    const currencies = currencyCodes.map(function (item) {
       return '<option ' + (currency === item ? 'selected' : '') + '>' + item + '</option>';
     }).join('');
     const storedPlan = payment.planRate != null && payment.planRate !== '' && num(payment.planRate) > 0 ? num(payment.planRate) : 0;
