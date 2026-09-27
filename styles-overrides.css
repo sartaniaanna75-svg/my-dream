@@ -337,3 +337,25 @@ select.fx-currency-store{display:none!important}
 .income-apart h3{color:#fff}
 .income-table td{white-space:nowrap}
 @media(max-width:720px){.income-filters,.income-metrics,.income-structure-grid,.income-compare-grid{grid-template-columns:1fr}.income-table td{white-space:normal}}
+.rent-row{flex-wrap:wrap;align-items:flex-start}
+.rent-row-alert{border-color:#ff9e3d;background:linear-gradient(160deg,#4a3018,#16356e)}
+.rent-row-soon{border-color:#ffb14a}
+.rent-flag{flex:1 0 100%;margin-bottom:4px;color:#ffd48a;font:800 13px/1.3 Manrope;letter-spacing:.04em}
+.rent-modal-object{margin:0 0 12px;color:#fff;font:800 18px Manrope}
+.rent-modal-note{margin:12px 0 0;color:#d5e4ff;font-size:13px;line-height:1.45}
+.rent-stats{flex:1 0 100%;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-top:12px}
+.rent-stats div{padding:8px 10px;border-radius:10px;background:#0d2f68}
+.rent-stats span,.rent-life-row span{display:block;color:#9db1d5;font-size:11px}
+.rent-stats strong,.rent-life-row strong{display:block;margin-top:3px;color:#fff;font-size:13px}
+.rent-stats small,.rent-life-row small{display:block;margin-top:3px;color:#ffd48a;font-size:11px}
+.rent-history{flex:1 0 100%;margin-top:10px}
+.rent-history summary{cursor:pointer;color:#ffd48a;font-weight:800}
+.rent-life-row{display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:8px;padding:10px 12px;border-radius:10px;background:#0c2d68}
+.rent-life-row b{color:#fff}
+.rent-alert{margin:0 0 14px;border-color:#ff9e3d}
+.rent-alert-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-top:1px solid #35548f}
+.rent-alert-row:first-of-type{border-top:0;padding-top:0}
+.rent-alert-row b{display:block;color:#fff;font-size:16px}
+.rent-alert-row span{display:block;margin-top:4px;color:#ffd48a;font-size:13px;font-weight:700}
+.rent-alert-row small{display:block;margin-top:3px;color:#f3e6d0;font-weight:600}
+@media(max-width:720px){.rent-stats{grid-template-columns:1fr 1fr}.rent-alert-row,.rent-row-actions{align-items:flex-start;flex-wrap:wrap}}

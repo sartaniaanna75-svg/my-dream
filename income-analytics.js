@@ -118,7 +118,7 @@
   }
 
   function pushRent(rows, id, name, payment, currency) {
-    if (!payment || !monthKey(payment.date) || !(num(payment.amount) > 0)) return;
+    if (!payment || payment.status === 'Отменён' || !monthKey(payment.date) || !(num(payment.amount) > 0)) return;
     const seen = {};
     rows.forEach(function (row) { seen[row.id] = true; });
     const rowId = 'rent-' + id + '-' + (payment.id || payment.date);
@@ -141,9 +141,17 @@
       const rent = asset.rent || {};
       const currency = rent.currency || asset.currency || 'RUB';
       const dates = {};
+      const liveIds = {};
       (rent.payments || []).forEach(function (payment) {
         dates[payment.date] = true;
+        if (payment.id) liveIds[payment.id] = true;
         pushRent(rows, asset.id, asset.name || 'Объект', payment, currency);
+      });
+      (asset.rentHistory || []).forEach(function (lease) {
+        (lease.payments || []).forEach(function (payment) {
+          if (payment.status !== 'Получено' || (payment.id && liveIds[payment.id])) return;
+          pushRent(rows, asset.id + '-hist', asset.name || 'Объект', payment, payment.currency || lease.currency || currency);
+        });
       });
       const live = (asset.usage || asset.usageStatus) === 'Сдаётся в аренду';
       if (live && monthKey(rent.nextDate) && num(rent.amount) > 0 && !dates[rent.nextDate]) {
