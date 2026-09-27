@@ -513,10 +513,7 @@
     const currency = asset.currency || 'RUB';
     const foreign = assetIsForeign(asset);
     const change = num(asset.value) - num(asset.price);
-    const initial = num(asset.initialRate);
-    const current = liveRate(currency, asset);
-    const revalue = foreign && initial > 1 && current > 0 ? num(asset.value) * (current - initial) : null;
-    const revalueBlock = !foreign ? '' : '<div class="asset-revalue"><span>Валютная переоценка</span><strong>' + (revalue == null ? 'Курс при внесении не указан' : signedOriginal(revalue, 'RUB')) + '</strong><small>Это не полученная прибыль. Так меняется рублёвый эквивалент текущей оценки из-за курса, сама цена в ' + currency + ' при этом не считается доходом.</small></div>';
+    const revalueBlock = '';
     const todayValue = foreign ? (rubApprox(asset.value, currency, asset) === 'курс не задан' ? 'курс не задан' : rub(assetAmountRub(asset, asset.value))) : rub(asset.value);
     const prepareRate = liveRate(currency, asset);
     const prepareText = prepareRate > 0 ? '≈ ' + rub(assetRemaining(asset) * prepareRate) : 'курс не задан';
@@ -552,7 +549,8 @@
       asset.comment ? ['Комментарий', asset.comment] : null
     ].filter(Boolean);
     const extraBlock = extras.length ? '<div class="asset-extra">' + extras.map(function (row) { return '<div><span>' + esc(row[0]) + '</span><strong>' + esc(row[1]) + '</strong></div>'; }).join('') + '</div>' : '';
-    return '<article class="asset-row panel"><div class="asset-row-main"><div class="asset-row-title"><strong>' + esc(asset.name) + '</strong><span>' + meta + '</span></div><div class="asset-row-facts"><div><span>Текущая стоимость</span><strong>' + currentMain + '</strong>' + (currentSub ? '<small>' + currentSub + '</small>' : '') + '</div>' + payFacts + '</div>' + fxFacts + '<span class="tag asset-status ' + statusClass + '">' + esc(statusLabel) + '</span><button type="button" class="ghost-button asset-more" aria-expanded="false" onclick="toggleAssetDetails(\'' + asset.id + '\',this)">Подробнее</button></div><div class="asset-details" id="asset-details-' + asset.id + '" hidden><div class="asset-details-head"><p class="eyebrow">' + (foreign ? 'ЗАРУБЕЖНОЕ ИМУЩЕСТВО' : 'РУБЛИ') + '</p>' + actions('asset', asset.id) + '</div>' + detailMetrics + valueBlock + (purchaseOpen ? revalueBlock : '') + extraBlock + partsView + historyView + payNote + '</div></article>';
+    const detailBody = foreign && fxFacts ? fxFacts : detailMetrics + valueBlock + (purchaseOpen ? revalueBlock : '');
+    return '<article class="asset-row panel"><div class="asset-row-main"><div class="asset-row-title"><strong>' + esc(asset.name) + '</strong><span>' + meta + '</span></div><div class="asset-row-facts"><div><span>Текущая стоимость</span><strong>' + currentMain + '</strong>' + (currentSub ? '<small>' + currentSub + '</small>' : '') + '</div>' + payFacts + '</div><span class="tag asset-status ' + statusClass + '">' + esc(statusLabel) + '</span><button type="button" class="ghost-button asset-more" aria-expanded="false" onclick="toggleAssetDetails(\'' + asset.id + '\',this)">Подробнее</button></div><div class="asset-details" id="asset-details-' + asset.id + '" hidden><div class="asset-details-head"><p class="eyebrow">' + (foreign ? 'ЗАРУБЕЖНОЕ ИМУЩЕСТВО' : 'РУБЛИ') + '</p>' + actions('asset', asset.id) + '</div>' + detailBody + extraBlock + partsView + historyView + payNote + '</div></article>';
   }
 
   window.toggleAssetDetails = function (id, button) {

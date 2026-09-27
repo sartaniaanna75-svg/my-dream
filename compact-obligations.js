@@ -40,8 +40,8 @@ function compactObligationCard(item) {
     if (currency && currency !== 'RUB' && typeof moneyOriginal === 'function') return moneyOriginal(amount, currency);
     return rub(amount);
   };
-  const fxRest = item.asset && typeof fxObligationRub === 'function' ? fxObligationRub(item.asset) : null;
-  const fxNote = item.asset && item.asset.currency && item.asset.currency !== 'RUB' ? '<p class="fx-obligation-note">Фактически вложено ' + (typeof actualSpentText === 'function' ? actualSpentText(item.asset) : '') + (fxRest != null ? ' · остаток по текущему курсу ' + rub(fxRest) : '') + '</p>' : '';
+  const purchase = item.asset && item.asset.currency && item.asset.currency !== 'RUB' && typeof fxPurchase === 'function' ? fxPurchase(item.asset) : null;
+  const fxNote = purchase && item.remaining > 0 ? '<p class="fx-obligation-note">Осталось ' + (typeof moneyOriginal === 'function' ? moneyOriginal(purchase.left, purchase.currency) : purchase.left + ' ' + purchase.currency) + (purchase.rate > 0 ? ' · необходимо подготовить ' + rub(purchase.future) : '') + '</p>' : '';
   const displayStatus = function (entry) {
     if (entry.status === 'Оплачено') return 'Оплачено';
     if (entry.status === 'Просрочено' || (entry.date && daysFromNow(entry.date) < 0)) return 'Просрочено';

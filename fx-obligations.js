@@ -82,8 +82,10 @@
   function fxLines(asset) {
     const lines = [];
     const currency = (asset && asset.currency) || 'RUB';
-    if (currency !== 'RUB') {
-      const left = primaryLeft(asset);
+    const left = primaryLeft(asset);
+    if (currency === 'RUB') {
+      lines.push({ id: '', currency: 'RUB', left: left, rate: 1, rub: left, prior: 0 });
+    } else {
       const rate = ownRate(asset, currency, asset.currentRate);
       lines.push({
         id: '',
@@ -121,13 +123,79 @@
     return code;
   }
 
-  function shiftHtml(left, prior, rate) {
-    if (!(prior > 0) || !(rate > 0) || Math.abs(prior - rate) < 1e-9) return '';
-    const before = left * prior;
-    const now = left * rate;
-    const delta = now - before;
-    return '<p class="fx-shift">Изменение рублёвого эквивалента из-за курса<br>Вчера для погашения остатка требовалось: ' + rub(before) + '<br>Сегодня: ' + rub(now) + '<br>Изменение: ' + (delta > 0 ? '+' : delta < 0 ? '−' : '') + rub(Math.abs(delta)) + '<br>Это переоценка оставшегося обязательства, а не платёж и не новый долг.</p>';
+  function legacyPaid(asset) {
+    if (!asset) return 0;
+    return asset.paidBase !== undefined ? num(asset.paidBase) : num(asset.paid);
   }
+
+  function contractPaymentRows(asset) {
+    const currency = (asset && asset.currency) || 'RUB';
+    return assetPayments(asset).filter(function (payment) {
+      return payment.status === 'Оплачено' && (payment.currency || currency) === currency;
+    });
+  }
+
+  function contractPaid(asset) {
+    const fromPayments = contractPaymentRows(asset).reduce(function (sum, payment) { return sum + paymentAmount(payment); }, 0);
+    const legacy = legacyPaid(asset);
+    if (fromPayments <= 0) return legacy;
+    return Math.max(fromPayments, legacy);
+  }
+
+  function contractLeft(asset) {
+    return Math.max(0, num(asset && asset.price) - contractPaid(asset));
+  }
+
+  function spentRubles(asset) {
+    const rows = contractPaymentRows(asset);
+    let total = 0;
+    let known = true;
+    rows.forEach(function (payment) {
+      const rubles = paymentRubles(payment);
+      if (payment.rubActual != null && payment.rubActual !== '' || num(payment.payRate) > 0) total += rubles;
+      else known = false;
+    });
+    const fromPayments = rows.reduce(function (sum, payment) { return sum + paymentAmount(payment); }, 0);
+    const opening = Math.max(0, contractPaid(asset) - fromPayments);
+    if (opening > 0.009) {
+      if (fromPayments <= 0 && num(asset && asset.paidRub) > 0) total += num(asset.paidRub);
+      else known = false;
+    }
+    return { total: roundMoney(total), known: known };
+  }
+
+  function initialPlan(asset) {
+    if (num(asset && asset.contractRub) > 0) return num(asset.contractRub);
+    if (num(asset && asset.initialRate) > 0) return roundMoney(num(asset.price) * num(asset.initialRate));
+    return 0;
+  }
+
+  function fxPurchase(asset) {
+    const currency = (asset && asset.currency) || 'RUB';
+    const paid = contractPaid(asset);
+    const left = contractLeft(asset);
+    const rate = ownRate(asset, currency, asset && asset.currentRate);
+    const spent = spentRubles(asset);
+    const future = rate > 0 ? roundMoney(left * rate) : 0;
+    const plan = initialPlan(asset);
+    const closed = left <= 0.009;
+    const forecast = !closed && spent.known && rate > 0 ? roundMoney(spent.total + future) : 0;
+    const compare = closed ? (spent.known ? spent.total : 0) : forecast;
+    const delta = plan > 0 && compare > 0 ? roundMoney(compare - plan) : null;
+    const average = closed && spent.known && num(asset && asset.price) > 0 ? spent.total / num(asset.price) : 0;
+    return { currency: currency, paid: paid, left: left, rate: rate, spent: spent, future: future, plan: plan, closed: closed, forecast: forecast, delta: delta, average: average, initialRate: num(asset && asset.initialRate) };
+  }
+
+  function resultSentence(purchase) {
+    if (!purchase.spent.known && purchase.paid > 0) return 'Укажите фактически потраченные рубли по платежам. Уже оплаченная часть не пересчитывается по сегодняшнему курсу.';
+    if (purchase.delta == null) return 'Укажите курс при заключении договора, чтобы сравнить покупку с первоначальным планом.';
+    const amount = rub(Math.abs(purchase.delta));
+    if (Math.abs(purchase.delta) < 0.5) return purchase.closed ? 'Фактическая стоимость совпала с первоначальным планом.' : 'Прогноз сейчас совпадает с первоначальным планом.';
+    if (purchase.closed) return purchase.delta > 0 ? 'Из-за изменения курса покупка фактически дороже на ' + amount + '.' : 'Из-за изменения курса покупка фактически дешевле на ' + amount + '.';
+    return purchase.delta > 0 ? 'Из-за изменения курса покупка сейчас прогнозно дороже на ' + amount + '.' : 'Из-за изменения курса покупка сейчас прогнозно дешевле на ' + amount + '.';
+  }
+
+  window.fxPurchase = fxPurchase;
 
   function legPreview(row) {
     const code = row.querySelector('[name="fx-currency"]').value || 'USD';
@@ -150,14 +218,18 @@
     return '<div class="fx-leg"><input name="fx-id" type="hidden" value="' + esc(leg.id || '') + '"><input name="fx-prior" type="hidden" value="' + esc(leg.priorRate != null ? leg.priorRate : '') + '"><label>Валюта<select name="fx-currency" data-currency-catalog="1"><option>' + esc(code) + '</option></select></label><label>Сумма<input name="fx-amount" inputmode="decimal" autocomplete="off" value="' + esc(leg.amount != null && leg.amount !== '' ? formatMoneyInput(leg.amount) : '') + '"></label><label>Текущий курс<input name="fx-rate" inputmode="decimal" autocomplete="off" value="' + esc(leg.currentRate != null && leg.currentRate !== '' ? String(leg.currentRate).replace('.', ',') : '') + '"></label><button type="button" class="ghost-button fx-leg-remove">Удалить</button><p class="fx-leg-preview"></p></div>';
   }
 
-  function historyHtml(payments, currency) {
-    const rows = payments.slice().sort(function (a, b) { return String(a.paidDate || a.date || '').localeCompare(String(b.paidDate || b.date || '')); });
-    if (!rows.length) return '<p class="fx-history-empty">Валютных платежей пока нет</p>';
-    const paid = rows.reduce(function (sum, payment) { return sum + paymentAmount(payment); }, 0);
-    const invested = rows.reduce(function (sum, payment) { return sum + paymentRubles(payment); }, 0);
-    return '<h4>История валютных платежей</h4><div class="fx-history-table"><div class="fx-history-head"><span>Дата</span><span>Сумма в валюте</span><span>Курс</span><span>Эквивалент в ₽</span></div>' + rows.map(function (payment) {
-      return '<div class="fx-history-row"><span>' + esc(dateText(payment.paidDate || payment.date)) + '</span><span>' + esc(moneyFx(paymentAmount(payment), payment.currency || currency)) + '</span><span>' + esc(rateFx(payment.payRate)) + '</span><span>' + esc(rubExact(paymentRubles(payment))) + '</span></div>';
-    }).join('') + '</div><p class="fx-history-total">Фактически оплачено: <b>' + esc(moneyFx(paid, currency)) + '</b></p><p class="fx-history-total">Фактически вложено: <b>' + esc(rubExact(invested)) + '</b></p>';
+  function historyHtml(asset, currency) {
+    const rows = contractPaymentRows(asset).slice().sort(function (a, b) { return String(a.paidDate || a.date || '').localeCompare(String(b.paidDate || b.date || '')); });
+    const fromPayments = rows.reduce(function (sum, payment) { return sum + paymentAmount(payment); }, 0);
+    const gap = Math.max(0, contractPaid(asset) - fromPayments);
+    if (!rows.length && gap <= 0.009) return '<p class="fx-history-empty">Валютных платежей пока нет</p>';
+    const gapRate = gap > 0.009 && fromPayments <= 0 && num(asset && asset.paidRub) > 0 ? num(asset.paidRub) / gap : 0;
+    const gapRow = gap > 0.009 ? '<div class="fx-history-row"><span>В объекте</span><span>' + esc(moneyFx(gap, currency)) + '</span><span>' + esc(gapRate > 0 ? rateFx(gapRate) : '—') + '</span><span>' + esc(fromPayments <= 0 && num(asset && asset.paidRub) > 0 ? rubExact(asset.paidRub) : 'рубли не указаны') + '</span></div>' : '';
+    const invested = rows.reduce(function (sum, payment) { return sum + paymentRubles(payment); }, 0) + (fromPayments <= 0 && num(asset && asset.paidRub) > 0 ? num(asset.paidRub) : 0);
+    return '<h4>История валютных платежей</h4><div class="fx-history-table"><div class="fx-history-head"><span>Дата</span><span>Оплачено ' + esc(currency) + '</span><span>Курс платежа</span><span>Потрачено ₽</span></div>' + gapRow + rows.map(function (payment) {
+      const rubles = paymentRubles(payment);
+      return '<div class="fx-history-row"><span>' + esc(dateText(payment.paidDate || payment.date)) + '</span><span>' + esc(moneyFx(paymentAmount(payment), payment.currency || currency)) + '</span><span>' + esc(rateFx(payment.payRate)) + '</span><span>' + esc(rubles > 0 || payment.rubActual != null && payment.rubActual !== '' ? rubExact(rubles) : '—') + '</span></div>';
+    }).join('') + '</div><p class="fx-history-total">Оплачено: <b>' + esc(moneyFx(contractPaid(asset), currency)) + '</b></p><p class="fx-history-total">Фактически потрачено: <b>' + esc(invested > 0 ? rubExact(invested) : 'рубли не указаны') + '</b></p>';
   }
 
   function paint(form) {
@@ -173,29 +245,36 @@
     const rateLabel = block.querySelector('.fx-rate-slot label');
     if (rateLabel) rateLabel.firstChild.textContent = 'Текущий курс ' + currency + ' к рублю';
     if (!foreign) return;
-    const asset = form.dataset.fxAssetId && state.assets.find(function (item) { return item.id === form.dataset.fxAssetId; });
-    const payments = fxPaidPayments(asset, form._fxPayments, currency);
-    const price = num(form.elements.price && form.elements.price.value);
-    const paid = payments.reduce(function (sum, payment) { return sum + paymentAmount(payment); }, 0);
-    const invested = payments.reduce(function (sum, payment) { return sum + paymentRubles(payment); }, 0);
-    const rate = num(form.elements.currentRate && form.elements.currentRate.value);
-    const left = Math.max(0, price - paid);
+    const stored = form.dataset.fxAssetId && state.assets.find(function (item) { return item.id === form.dataset.fxAssetId; });
+    const typedPaid = num(form.elements.paid && form.elements.paid.value);
+    const draft = Object.assign({}, stored || {}, {
+      currency: currency,
+      price: num(form.elements.price && form.elements.price.value),
+      paid: typedPaid,
+      paidBase: typedPaid,
+      initialRate: num(form.elements.initialRate && form.elements.initialRate.value) || (stored && stored.initialRate),
+      contractRub: stored && stored.contractRub,
+      currentRate: num(form.elements.currentRate && form.elements.currentRate.value) || (stored && stored.currentRate),
+      paidRub: stored && stored.paidRub,
+      payments: assetPayments(stored || {}).concat(form._fxPayments || [])
+    });
+    const typedInitial = num(form.elements.initialRate && form.elements.initialRate.value);
+    if (typedInitial > 0 && (!stored || !(num(stored.contractRub) > 0) || Math.abs(typedInitial - num(stored.initialRate)) > 1e-9 || Math.abs(draft.price - num(stored.price)) > 1e-9)) draft.contractRub = roundMoney(draft.price * typedInitial);
+    const purchase = fxPurchase(draft);
     const set = function (name, text) { const node = block.querySelector('[data-fx="' + name + '"]'); if (node) node.textContent = text; };
-    set('price', moneyFx(price, currency));
-    set('rate', rateFx(rate));
-    set('paid', moneyFx(paid, currency));
-    set('invested', rubExact(invested));
-    set('left', moneyFx(left, currency));
-    set('left-rub', rate > 0 ? rubExact(left * rate) : 'курс не задан');
+    set('price', moneyFx(draft.price, currency));
+    set('initial-rate', purchase.initialRate > 0 ? rateFx(purchase.initialRate) : 'не указан');
+    set('plan', purchase.plan > 0 ? rub(purchase.plan) : 'не указана');
+    set('spent', purchase.spent.known || purchase.spent.total > 0 ? rub(purchase.spent.total) : 'рубли не указаны');
+    set('forecast', purchase.closed ? 'покупка оплачена' : (purchase.forecast > 0 ? rub(purchase.forecast) : '—'));
+    set('paid', moneyFx(purchase.paid, currency));
+    set('left', moneyFx(purchase.left, currency));
+    set('rate', purchase.rate > 0 ? rateFx(purchase.rate) : 'курс не задан');
+    set('left-rub', purchase.rate > 0 ? rub(purchase.future) : 'курс не задан');
     const history = block.querySelector('.fx-history');
-    if (history) history.innerHTML = historyHtml(payments, currency);
-    const shift = block.querySelector('.fx-shift');
-    if (shift) {
-      const prior = num(block.dataset.priorRate);
-      const html = shiftHtml(left, prior, rate);
-      shift.hidden = !html;
-      shift.innerHTML = html ? html.replace(/^<p class="fx-shift">|<\/p>$/g, '') : '';
-    }
+    if (history) history.innerHTML = historyHtml(draft, currency);
+    const result = block.querySelector('.fx-result');
+    if (result) result.textContent = resultSentence(purchase);
   }
 
   function enhanceAssetCurrencyForm(id) {
@@ -219,7 +298,7 @@
       currency.dataset.currencyCatalog = '1';
       if (window.attachCurrencyPicker) window.attachCurrencyPicker(currency, { allowRub: true });
     }
-    ['rateMode', 'initialRate'].forEach(function (name) {
+    ['rateMode'].forEach(function (name) {
       const field = form.querySelector('[name="' + name + '"]');
       const wrap = field && field.closest('.form-field');
       if (wrap) wrap.classList.add('fx-legacy');
@@ -234,19 +313,36 @@
       const label = rateWrap.querySelector('label');
       if (label) label.textContent = 'Текущий курс';
     }
+    const initialField = form.querySelector('[name="initialRate"]');
+    const initialWrap = initialField && initialField.closest('.form-field');
+    const initialHome = initialWrap && initialWrap.parentElement;
+    const initialNext = initialWrap && initialWrap.nextSibling;
+    if (initialWrap) {
+      const label = initialWrap.querySelector('label');
+      if (label) label.textContent = 'Курс при заключении договора';
+    }
     const host = (currency && currency.closest('.form-field')) || form.querySelector('.form-grid');
     if (!host || form.querySelector('.fx-calc')) return;
-    host.insertAdjacentHTML('afterend', '<div class="fx-calc" hidden data-prior-rate="' + esc(asset.priorRate != null && asset.priorRate !== '' ? asset.priorRate : '') + '"><h4>Валютный расчёт</h4><div class="fx-rate-slot"></div><div class="fx-readout"><div><span>Стоимость</span><strong data-fx="price"></strong></div><div><span>Текущий курс</span><strong data-fx="rate"></strong></div><div><span>Оплачено</span><strong data-fx="paid"></strong></div><div><span>Фактически вложено</span><strong data-fx="invested"></strong></div><div><span>Осталось</span><strong data-fx="left"></strong></div><div><span>Остаток по текущему курсу</span><strong data-fx="left-rub"></strong></div></div><p class="fx-shift" hidden></p><div class="fx-history"></div><button type="button" class="ghost-button fx-add-leg">+ Добавить валютную часть</button><div class="fx-pay-panel" hidden><div class="fx-pay-grid"><label>Дата платежа<input name="fx-pay-date" type="date" value="' + isoDate(today) + '"></label><label>Сумма платежа в валюте<input name="fx-pay-amount" inputmode="decimal" autocomplete="off"></label><label>Валюта<select name="fx-pay-currency" data-currency-catalog="1"><option>' + esc(asset.currency && asset.currency !== 'RUB' ? asset.currency : 'AED') + '</option></select></label><label>Курс к рублю на дату платежа<input name="fx-pay-rate" inputmode="decimal" autocomplete="off"></label><label>Эквивалент платежа в рублях<input name="fx-pay-rub" inputmode="decimal" autocomplete="off" readonly></label></div><button type="button" class="primary-button fx-pay-save">Сохранить платёж</button></div></div>');
+    host.insertAdjacentHTML('afterend', '<div class="fx-calc" hidden><h4>Покупка и остаток</h4><div class="fx-rate-slot"></div><div class="fx-readout"><div><span>Стоимость по договору</span><strong data-fx="price"></strong></div><div><span>Курс при заключении</span><strong data-fx="initial-rate"></strong></div><div><span>Первоначально планировалось</span><strong data-fx="plan"></strong></div><div><span>Фактически потрачено</span><strong data-fx="spent"></strong></div><div><span>Прогнозная итоговая стоимость</span><strong data-fx="forecast"></strong></div><div><span>Оплачено</span><strong data-fx="paid"></strong></div><div><span>Осталось</span><strong data-fx="left"></strong></div><div><span>Текущий курс</span><strong data-fx="rate"></strong></div><div><span>Необходимо подготовить</span><strong data-fx="left-rub"></strong></div></div><p class="fx-result"></p><div class="fx-history"></div><button type="button" class="ghost-button fx-add-leg">+ Добавить фактический платёж</button><div class="fx-pay-panel" hidden><div class="fx-pay-grid"><label>Дата платежа<input name="fx-pay-date" type="date" value="' + isoDate(today) + '"></label><label>Сумма платежа в валюте<input name="fx-pay-amount" inputmode="decimal" autocomplete="off"></label><label>Валюта<select name="fx-pay-currency" data-currency-catalog="1"><option>' + esc(asset.currency && asset.currency !== 'RUB' ? asset.currency : 'AED') + '</option></select></label><label>Курс к рублю на дату платежа<input name="fx-pay-rate" inputmode="decimal" autocomplete="off"></label><label>Фактически потрачено, ₽<input name="fx-pay-rub" inputmode="decimal" autocomplete="off"></label></div><button type="button" class="primary-button fx-pay-save">Сохранить платёж</button></div></div>');
     const block = form.querySelector('.fx-calc');
     form._fxPayments = [];
-    if (asset.priorRate != null && asset.priorRate !== '') block.dataset.priorRate = asset.priorRate;
     function placeRate() {
-      if (!rateWrap || !block) return;
       const foreign = selectedCode(form) !== 'RUB' && selectedCode(form) !== '';
-      if (foreign) {
-        rateWrap.hidden = false;
-        block.querySelector('.fx-rate-slot').appendChild(rateWrap);
-      } else if (rateHome) rateHome.insertBefore(rateWrap, rateNext);
+      if (rateWrap) {
+        if (foreign && block) {
+          rateWrap.hidden = false;
+          block.querySelector('.fx-rate-slot').appendChild(rateWrap);
+        } else if (rateHome) rateHome.insertBefore(rateWrap, rateNext);
+      }
+      if (initialWrap) {
+        if (foreign && block) {
+          initialWrap.hidden = false;
+          block.querySelector('.fx-rate-slot').appendChild(initialWrap);
+        } else if (initialHome) {
+          initialWrap.hidden = true;
+          initialHome.insertBefore(initialWrap, initialNext);
+        }
+      }
     }
     const payPanel = block.querySelector('.fx-pay-panel');
     const payAmount = block.querySelector('[name="fx-pay-amount"]');
@@ -256,15 +352,28 @@
     function payCode() {
       return (payCurrency && payCurrency.value) || selectedCode(form) || '';
     }
-    function refillPay() {
+    let payLock = false;
+    function refillFromRate() {
+      if (payLock) return;
       const amount = num(payAmount.value);
       const rate = num(payRate.value);
-      if (payRub.dataset.manual === '1') return;
-      payRub.value = rate > 0 ? formatMoneyInput(roundMoney(amount * rate)) : '';
+      if (!(amount > 0) || !(rate > 0)) return;
+      payLock = true;
+      payRub.value = formatMoneyInput(roundMoney(amount * rate));
+      payLock = false;
     }
-    payAmount.addEventListener('input', refillPay);
-    payRate.addEventListener('input', refillPay);
-    payRub.addEventListener('input', function () { payRub.dataset.manual = '1'; });
+    function refillFromRub() {
+      if (payLock) return;
+      const amount = num(payAmount.value);
+      const rubles = num(payRub.value);
+      if (!(amount > 0) || !(rubles > 0)) return;
+      payLock = true;
+      payRate.value = String(rubles / amount).replace('.', ',');
+      payLock = false;
+    }
+    payAmount.addEventListener('input', refillFromRate);
+    payRate.addEventListener('input', refillFromRate);
+    payRub.addEventListener('input', refillFromRub);
     block.querySelector('.fx-add-leg').addEventListener('click', function () {
       const code = selectedCode(form);
       if (payCurrency && code && code !== 'RUB') {
@@ -273,19 +382,19 @@
         if (payCurrency._currencyRefresh) payCurrency._currencyRefresh();
       }
       payPanel.hidden = false;
-      payRub.dataset.manual = '';
-      refillPay();
     });
     block.querySelector('.fx-pay-save').addEventListener('click', function () {
       const date = block.querySelector('[name="fx-pay-date"]').value;
       const amount = num(payAmount.value);
-      const rate = num(payRate.value);
+      let rate = num(payRate.value);
+      let rubles = num(payRub.value);
       const code = payCode();
       if (!code || code === 'RUB') { alert('Выберите валюту платежа.'); return; }
       if (!date) { alert('Укажите дату платежа.'); return; }
       if (!(amount > 0)) { alert('Укажите сумму платежа.'); return; }
-      if (!(rate > 0)) { alert('Укажите курс на дату платежа.'); return; }
-      const rubles = payRub.dataset.manual === '1' && payRub.value.trim() !== '' ? num(payRub.value) : roundMoney(amount * rate);
+      if (!(rate > 0) && rubles > 0) rate = rubles / amount;
+      if (!(rubles > 0) && rate > 0) rubles = roundMoney(amount * rate);
+      if (!(rate > 0) || !(rubles > 0)) { alert('Укажите курс платежа или фактически потраченные рубли.'); return; }
       form._fxPayments.push({
         id: uid(),
         date: date,
@@ -301,12 +410,11 @@
       payAmount.value = '';
       payRate.value = '';
       payRub.value = '';
-      payRub.dataset.manual = '';
       payPanel.hidden = true;
       paint(form);
     });
     form.addEventListener('input', function (event) {
-      if (event.target && (event.target.name === 'fx-amount' || event.target.name === 'fx-rate' || event.target.name === 'price' || event.target.name === 'paid' || event.target.name === 'currentRate')) paint(form);
+      if (event.target && (event.target.name === 'fx-amount' || event.target.name === 'fx-rate' || event.target.name === 'price' || event.target.name === 'paid' || event.target.name === 'currentRate' || event.target.name === 'initialRate')) paint(form);
     });
     form.addEventListener('change', function (event) {
       if (!event.target) return;
@@ -314,15 +422,7 @@
         placeRate();
         paint(form);
       }
-      if (event.target === rateField) {
-        const next = num(rateField.value);
-        const started = num(block.dataset.rateFocus);
-        if (started > 0 && next > 0 && Math.abs(started - next) > 1e-9) block.dataset.priorRate = String(started);
-        paint(form);
-      }
-    });
-    if (rateField) rateField.addEventListener('focus', function () {
-      if (!num(block.dataset.priorRate)) block.dataset.rateFocus = String(num(rateField.value) || '');
+      if (event.target === rateField || event.target === initialField) paint(form);
     });
     if (window.upgradeCurrencySelects) window.upgradeCurrencySelects(form);
     placeRate();
@@ -334,8 +434,6 @@
         alert('Выберите валюту.');
         return;
       }
-      const rateBefore = num(asset.currentRate);
-      const sessionPrior = num(block.dataset.priorRate);
       const keptLegs = legs(asset).map(function (leg) { return Object.assign({}, leg, { payments: (leg.payments || []).slice() }); });
       const frozen = assetPayments(asset).map(function (payment) {
         return { id: payment.id, rubActual: payment.rubActual, payRate: payment.payRate, paidAmount: payment.paidAmount, currency: payment.currency, status: payment.status };
@@ -348,9 +446,6 @@
         ? state.assets.find(function (item) { return item.id === id; })
         : state.assets.filter(function (item) { return beforeIds.indexOf(item.id) < 0; })[0] || state.assets.slice().reverse().find(function (item) { return item.name === name; });
       if (!saved) return result;
-      const nextRate = num(saved.currentRate);
-      if (rateBefore > 0 && Math.abs(rateBefore - nextRate) > 1e-9) saved.priorRate = rateBefore;
-      else if (!(num(saved.priorRate) > 0) && sessionPrior > 0 && Math.abs(sessionPrior - nextRate) > 1e-9) saved.priorRate = sessionPrior;
       if (!Array.isArray(saved.payments)) saved.payments = [];
       frozen.forEach(function (payment) {
         const found = saved.payments.find(function (item) { return item.id === payment.id; });
@@ -364,7 +459,15 @@
         if (!saved.payments.some(function (item) { return item.id === payment.id; })) saved.payments.push(payment);
       });
       if (!Array.isArray(saved.fxLegs) || !saved.fxLegs.length) saved.fxLegs = keptLegs;
-      saved.paid = assetPaid(saved);
+      if ((saved.currency || 'RUB') !== 'RUB') {
+        const nextInitial = num(saved.initialRate);
+        const planChanged = nextInitial > 0 && (!(num(saved.contractRub) > 0) || Math.abs(num(asset.initialRate) - nextInitial) > 1e-9 || Math.abs(num(asset.price) - num(saved.price)) > 1e-9);
+        if (planChanged) saved.contractRub = roundMoney(num(saved.price) * nextInitial);
+        const typed = num(form.elements.paid && form.elements.paid.value);
+        const linked = Math.max(contractPaid(saved), typed);
+        saved.paid = linked;
+        saved.paidBase = linked;
+      } else saved.paid = assetPaid(saved);
       save();
       render();
       return result;
@@ -398,31 +501,45 @@
     if (legId && !leg) return;
     const currency = leg ? leg.currency : (asset.currency || 'RUB');
     const foreign = currency !== 'RUB';
-    const suggested = leg ? num(leg.currentRate) : ownRate(asset, currency, asset.currentRate);
-    document.getElementById('modal-root').innerHTML = '<div class="modal-backdrop" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-header"><h2>Платёж · ' + esc(currency) + '</h2><button class="close" type="button" onclick="closeModal()">×</button></div><form id="fx-pay-form"><div class="modal-body"><div class="form-grid"><div class="form-field"><label>Дата платежа</label><input name="payDate" type="date" value="' + isoDate(today) + '"></div><div class="form-field"><label>Сумма платежа в валюте</label><input name="fxPayAmount" inputmode="decimal" autocomplete="off"></div>' + (foreign ? '<div class="form-field"><label>Фактический курс платежа</label><input name="fxPayRate" inputmode="decimal" autocomplete="off" value="' + esc(suggested ? String(suggested).replace('.', ',') : '') + '"></div><div class="form-field"><label>Фактически оплачено в рублях</label><input name="rubActual" inputmode="decimal" autocomplete="off"></div>' : '') + '</div></div><div class="modal-footer"><button type="button" class="ghost-button" onclick="closeModal()">Отмена</button><button class="primary-button">Сохранить платёж</button></div></form></div></div>';
+    document.getElementById('modal-root').innerHTML = '<div class="modal-backdrop" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-header"><h2>Платёж · ' + esc(currency) + '</h2><button class="close" type="button" onclick="closeModal()">×</button></div><form id="fx-pay-form"><div class="modal-body"><div class="form-grid"><div class="form-field"><label>Дата платежа</label><input name="payDate" type="date" value="' + isoDate(today) + '"></div><div class="form-field"><label>Сумма платежа в валюте</label><input name="fxPayAmount" inputmode="decimal" autocomplete="off"></div>' + (foreign ? '<div class="form-field"><label>Фактический курс платежа</label><input name="fxPayRate" inputmode="decimal" autocomplete="off"></div><div class="form-field"><label>Фактически потрачено, ₽</label><input name="rubActual" inputmode="decimal" autocomplete="off"></div>' : '') + '</div></div><div class="modal-footer"><button type="button" class="ghost-button" onclick="closeModal()">Отмена</button><button class="primary-button">Сохранить платёж</button></div></form></div></div>';
     const form = document.getElementById('fx-pay-form');
     const amountInput = form.querySelector('[name="fxPayAmount"]');
     const rateInput = form.querySelector('[name="fxPayRate"]');
     const rubInput = form.querySelector('[name="rubActual"]');
-    let rubTouched = false;
-    function refill() {
-      if (!foreign || !rubInput || rubTouched) return;
+    let payLock = false;
+    function refillFromRate() {
+      if (payLock || !foreign || !rubInput || !rateInput) return;
       const amount = num(amountInput.value);
-      const rate = num(rateInput && rateInput.value);
-      rubInput.value = rate > 0 ? formatMoneyInput(roundMoney(amount * rate)) : '';
+      const rate = num(rateInput.value);
+      if (!(amount > 0) || !(rate > 0)) return;
+      payLock = true;
+      rubInput.value = formatMoneyInput(roundMoney(amount * rate));
+      payLock = false;
     }
-    if (amountInput) amountInput.addEventListener('input', refill);
-    if (rateInput) rateInput.addEventListener('input', refill);
-    if (rubInput) rubInput.addEventListener('input', function () { rubTouched = true; });
+    function refillFromRub() {
+      if (payLock || !foreign || !rubInput || !rateInput) return;
+      const amount = num(amountInput.value);
+      const rubles = num(rubInput.value);
+      if (!(amount > 0) || !(rubles > 0)) return;
+      payLock = true;
+      rateInput.value = String(rubles / amount).replace('.', ',');
+      payLock = false;
+    }
+    if (amountInput) amountInput.addEventListener('input', refillFromRate);
+    if (rateInput) rateInput.addEventListener('input', refillFromRate);
+    if (rubInput) rubInput.addEventListener('input', refillFromRub);
     form.onsubmit = function (event) {
       event.preventDefault();
       const amount = num(amountInput.value);
-      const rate = rateInput ? num(rateInput.value) : 1;
+      let rate = rateInput ? num(rateInput.value) : 1;
+      let rubles = rubInput ? num(rubInput.value) : amount;
       const date = form.querySelector('[name="payDate"]').value;
       if (!date) { alert('Укажите дату платежа.'); return; }
       if (!(amount > 0)) { alert('Укажите сумму платежа.'); return; }
-      if (foreign && !(rate > 0)) { alert('Укажите фактический курс платежа.'); return; }
-      const rubles = foreign ? (rubTouched && rubInput.value.trim() !== '' ? num(rubInput.value) : roundMoney(amount * rate)) : amount;
+      if (foreign && !(rate > 0) && rubles > 0) rate = rubles / amount;
+      if (foreign && !(rubles > 0) && rate > 0) rubles = roundMoney(amount * rate);
+      if (foreign && (!(rate > 0) || !(rubles > 0))) { alert('Укажите курс платежа или фактически потраченные рубли.'); return; }
+      if (!foreign) rubles = amount;
       rememberPayment(asset, legId, {
         id: uid(),
         date: date,
@@ -441,35 +558,44 @@
     };
   };
 
-  window.fxAssetCardHtml = function (asset) {
+  function marketLine(asset) {
+    const history = asset && asset.rateHistory || [];
+    if (history.length < 2) return '';
+    const last = history[history.length - 1];
+    const prev = history[history.length - 2];
+    if (last.rubValue == null || prev.rubValue == null) return '';
+    const delta = num(last.rubValue) - num(prev.rubValue);
+    const sign = delta > 0 ? '+' : delta < 0 ? '−' : '';
+    return '<div><span>Изменение рыночной стоимости</span><strong>' + sign + rub(Math.abs(delta)) + '</strong></div>';
+  }
+
+  function purchaseCardHtml(asset) {
     const currency = (asset && asset.currency) || 'RUB';
     if (!currency || currency === 'RUB') return '';
-    const payments = fxPaidPayments(asset, [], currency);
-    const paid = payments.reduce(function (sum, payment) { return sum + paymentAmount(payment); }, 0);
-    const invested = payments.reduce(function (sum, payment) { return sum + paymentRubles(payment); }, 0);
-    const left = Math.max(0, assetRemaining(asset));
-    const rate = ownRate(asset, currency, asset.currentRate);
-    return '<div class="fx-asset-facts"><div><span>Стоимость</span><strong>' + esc(moneyFx(asset.price, currency)) + '</strong></div><div><span>Оплачено</span><strong>' + esc(moneyFx(paid, currency)) + '</strong></div><div><span>Фактически вложено</span><strong>' + esc(rubExact(invested)) + '</strong></div><div><span>Осталось</span><strong>' + esc(moneyFx(left, currency)) + '</strong></div><div><span>Текущий курс</span><strong>' + esc(rateFx(rate)) + '</strong></div><div><span>Остаток по текущему курсу</span><strong>' + esc(rate > 0 ? rubExact(left * rate) : 'курс не задан') + '</strong></div></div>' + historyHtml(payments, currency);
+    const purchase = fxPurchase(asset);
+    const valueCode = asset.valueCurrency || currency;
+    const valueRub = typeof assetAmountRub === 'function' ? assetAmountRub(asset, asset.value) : num(asset.value);
+    const valueText = !(num(asset.value) > 0) ? 'не указана' : (valueCode === 'RUB' ? rub(asset.value) : (valueRub ? rub(valueRub) : moneyFx(asset.value, valueCode)));
+    const spentText = purchase.spent.known || purchase.spent.total > 0 ? rub(purchase.spent.total) : 'рубли не указаны';
+    const forecastText = purchase.closed ? '' : (purchase.forecast > 0 ? '<div><span>Прогнозная итоговая стоимость</span><strong>' + rub(purchase.forecast) + '</strong></div>' : '');
+    const averageText = purchase.closed && purchase.average > 0 ? '<div><span>Средний фактический курс ' + esc(currency) + '</span><strong>' + esc(rateFx(purchase.average)) + '</strong></div>' : '';
+    const result = resultSentence(purchase);
+    return '<div class="fx-purchase"><section class="fx-block"><h4>Стоимость объекта сегодня</h4><div class="fx-asset-facts"><div><span>Текущая оценочная стоимость</span><strong>' + valueText + '</strong></div><div><span>Валюта оценки</span><strong>' + esc(valueCode) + '</strong></div>' + marketLine(asset) + '</div></section><section class="fx-block"><h4>Покупка и валютный результат</h4><div class="fx-asset-facts"><div><span>Стоимость по договору</span><strong>' + esc(moneyFx(asset.price, currency)) + '</strong></div><div><span>Курс при заключении договора</span><strong>' + (purchase.initialRate > 0 ? esc(rateFx(purchase.initialRate)) : 'не указан') + '</strong></div><div><span>Первоначально планировалось</span><strong>' + (purchase.plan > 0 ? rub(purchase.plan) : 'не указана') + '</strong></div><div><span>Фактически уже потрачено</span><strong>' + spentText + '</strong></div>' + forecastText + averageText + '</div><p class="fx-result">' + esc(result) + '</p></section><section class="fx-block"><h4>Осталось оплатить</h4><div class="fx-asset-facts"><div><span>Оплачено</span><strong>' + esc(moneyFx(purchase.paid, currency)) + '</strong></div><div><span>Осталось</span><strong>' + esc(moneyFx(purchase.left, currency)) + '</strong></div><div><span>Текущий курс</span><strong>' + (purchase.rate > 0 ? esc(rateFx(purchase.rate)) : 'курс не задан') + '</strong></div><div><span>Необходимо подготовить</span><strong>' + (purchase.closed ? 'оплачено' : (purchase.rate > 0 ? rub(purchase.future) : 'курс не задан')) + '</strong></div></div>' + historyHtml(asset, currency) + '</section></div>';
+  }
+
+  window.fxAssetCardHtml = purchaseCardHtml;
+
+  const paidBeforeFx = assetPaid;
+  assetPaid = function (asset) {
+    if (!asset || (asset.currency || 'RUB') === 'RUB') return paidBeforeFx(asset);
+    return contractPaid(asset);
   };
-
-  function cardExtra(asset) {
-    return window.fxAssetCardHtml(asset);
-  }
-
-  if (typeof compactObligationCard === 'function') {
-    const baseCard = compactObligationCard;
-    compactObligationCard = function (item) {
-      const html = baseCard(item);
-      if (!item || !item.asset) return html;
-      const extra = cardExtra(item.asset);
-      if (!extra) return html;
-      const history = extra.match(/<div class="compact-payment[\s\S]*$/) ? extra : '';
-      const head = history ? extra.slice(0, extra.length - history.length) : extra;
-      let next = html.replace('<button class="all-payments-toggle"', head + '<button class="all-payments-toggle"');
-      if (history) next = next.replace('</div></article>', history + '</div></article>');
-      return next;
-    };
-  }
+  const remainingBeforeFx = assetRemaining;
+  assetRemaining = function (asset) {
+    if (!asset || (asset.currency || 'RUB') === 'RUB') return remainingBeforeFx(asset);
+    if (asset.ownershipStatus && asset.ownershipStatus !== 'Покупается') return 0;
+    return contractLeft(asset);
+  };
 
   const baseObligations = obligations;
   obligations = function () {

@@ -241,7 +241,11 @@ select.fx-currency-store{display:none!important}
 .fx-history-row{color:#fff;font-size:13px;padding:4px 0;border-top:1px solid #1d4380}
 .fx-history-total{margin:6px 0 0;color:#dce8ff;font-size:13px}
 .fx-history-empty{margin:8px 0 0;color:#9db1d5;font-size:12px}
-.fx-asset-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px 14px;width:100%;margin-top:8px;grid-column:1/-1}
+.fx-purchase{display:grid;gap:12px;width:100%;margin-top:8px}
+.fx-block{padding:12px 14px;border:1px solid #1d4380;border-radius:14px}
+.fx-block h4{margin:0 0 8px;color:#fff;font-size:14px}
+.fx-result{margin:8px 0 0;color:#dce8ff;font-size:13px;line-height:1.45}
+.fx-asset-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px 14px;width:100%;margin-top:8px}
 .fx-asset-facts span{display:block;color:#9db1d5;font-size:11px}
 .fx-asset-facts strong{color:#fff;font-size:14px}
 .asset-row-main .fx-history{grid-column:1/-1}
