@@ -400,11 +400,26 @@ select.fx-currency-store{display:none!important}
 .income-structure-grid small,.income-compare-grid small{display:block;margin-top:6px;color:#c5d6f2;font-size:12px}
 .income-compare-grid .positive{color:#43dfbd}
 .income-compare-grid .danger{color:#ff8580}
+.income-score{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:0 0 12px}
+.income-score>span{grid-column:1/-1;color:#a9bde2;font-size:12px;font-weight:800;letter-spacing:.04em}
+.income-score div{padding:8px 10px;border-radius:10px;background:#10347a;border:1px solid #1e4b97}
+.income-score small{display:block;color:#a9bde2;font-size:11px;font-weight:700}
+.income-score strong{display:block;margin-top:3px;color:#fff;font:800 16px/1.2 Manrope}
+.income-score .positive{color:#43dfbd}
+.income-score .danger{color:#ff8580}
+.income-hover{min-height:18px;margin:0 0 8px;color:#d5e4ff;font-size:12px;line-height:1.45}
+.income-hover strong{color:#fff}
+.income-tip-row{display:flex;flex-wrap:wrap;gap:2px 14px;margin-top:4px}
+.income-tip-row b{min-width:64px;color:#fff}
+.income-hover .positive{color:#43dfbd}
+.income-hover .danger{color:#ff8580}
 .income-chart{display:flex;align-items:flex-end;gap:8px;min-height:180px;overflow-x:auto;padding-top:8px}
-.income-col{flex:1 0 72px;display:flex;flex-direction:column;align-items:center;gap:8px;min-width:72px}
-.income-bars{display:flex;align-items:flex-end;justify-content:center;gap:6px;width:100%;height:140px}
-.income-bars i{display:block;width:18px;border-radius:7px 7px 3px 3px}
-.income-plan{background:#ffb14a}
+.income-col{flex:1 0 92px;display:flex;flex-direction:column;align-items:center;gap:8px;min-width:92px;cursor:default}
+.income-bars{display:flex;align-items:flex-end;justify-content:center;gap:3px;width:100%;height:140px}
+.income-bars i{display:block;width:11px;border-radius:7px 7px 3px 3px}
+.income-gap{display:block;width:8px;flex:none}
+.income-plan,.income-plan.deposit{background:#ffb14a}
+.income-plan.rent{background:#d8c7ff}
 .income-fact.deposit{background:#3dceb0}
 .income-fact.rent{background:#8b7cff}
 .income-col span{color:#d5e4ff;font-size:11px;font-weight:700;text-align:center}
@@ -413,7 +428,7 @@ select.fx-currency-store{display:none!important}
 .income-apart p{color:#d5e4ff;line-height:1.45}
 .income-apart h3{color:#fff}
 .income-table td{white-space:nowrap}
-@media(max-width:720px){.income-filters,.income-metrics,.income-structure-grid,.income-compare-grid{grid-template-columns:1fr}.income-table td{white-space:normal}}
+@media(max-width:720px){.income-filters,.income-metrics,.income-structure-grid,.income-compare-grid{grid-template-columns:1fr}.income-score{grid-template-columns:1fr 1fr}.income-table td{white-space:normal}}
 .rent-row{flex-wrap:wrap;align-items:flex-start}
 .rent-row-alert{border-color:#ff9e3d;background:linear-gradient(160deg,#4a3018,#16356e)}
 .rent-row-soon{border-color:#ffb14a}

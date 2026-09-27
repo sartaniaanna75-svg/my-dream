@@ -334,29 +334,70 @@
     return '<section class="panel income-compare"><div class="panel-head"><div><p class="eyebrow">СРАВНЕНИЕ</p><h3>К предыдущему периоду</h3></div></div><div class="income-compare-grid">' + html + '</div></section>';
   }
 
-  function chart(allRows) {
+  function shownSources() {
+    return SOURCES.filter(function (source) { return filter.source === 'all' || filter.source === source.id; });
+  }
+
+  function sourceScore(by, id) {
+    const item = by && by[id] ? by[id] : { plan: 0, fact: 0 };
+    const plan = num(item.plan);
+    const fact = num(item.fact);
+    return { plan: plan, fact: fact, delta: roundMoney(fact - plan), rate: pct(fact, plan) };
+  }
+
+  function scoreText(title, score) {
+    const tone = score.delta < -0.004 ? 'danger' : score.delta > 0.004 ? 'positive' : '';
+    return '<div class="income-tip-row"><b>' + esc(title) + '</b><span>План: ' + esc(rub(score.plan)) + '</span><span>Факт: ' + esc(rub(score.fact)) + '</span><span class="' + tone + '">Отклонение: ' + esc(signed(score.delta, 'RUB')) + '</span><span>Выполнение: ' + esc(pctText(score.rate)) + '</span></div>';
+  }
+
+  function periodScore(rows) {
+    const total = sumRows(rows);
+    const score = sourceScore({ all: total }, 'all');
+    const tone = score.delta < -0.004 ? 'danger' : score.delta > 0.004 ? 'positive' : '';
+    return '<div class="income-score"><span>Выполнение плана дохода</span><div><small>План</small><strong>' + rub(score.plan) + '</strong></div><div><small>Факт</small><strong>' + rub(score.fact) + '</strong></div><div><small>Отклонение</small><strong class="' + tone + '">' + signed(score.delta, 'RUB') + '</strong></div><div><small>Выполнение</small><strong>' + pctText(score.rate) + '</strong></div></div>';
+  }
+
+  function barHeight(value, max) {
+    if (!(max > 0) || !(value > 0)) return 0;
+    return Math.max(4, Math.round(value / max * 100));
+  }
+
+  function chart(allRows, periodRows) {
+    const sources = shownSources();
     const keys = chartKeys();
     const groups = keys.map(function (key) {
       const rows = allRows.filter(function (row) { return monthKey(row.date) === key; });
-      const total = sumRows(rows);
-      return { key: key, plan: total.plan, fact: total.fact, by: total.by };
+      return { key: key, total: sumRows(rows) };
     });
-    const max = groups.reduce(function (peak, item) { return Math.max(peak, item.plan, item.fact); }, 0);
+    const max = groups.reduce(function (peak, item) {
+      return sources.reduce(function (inner, source) {
+        const score = sourceScore(item.total.by, source.id);
+        return Math.max(inner, score.plan, score.fact);
+      }, peak);
+    }, 0);
     const cols = groups.map(function (item) {
-      const planHeight = max > 0 ? Math.max(item.plan > 0 ? 4 : 0, Math.round(item.plan / max * 100)) : 0;
-      const factHeight = max > 0 ? Math.max(item.fact > 0 ? 4 : 0, Math.round(item.fact / max * 100)) : 0;
-      const deposit = item.by.deposit ? item.by.deposit.fact : 0;
-      const rent = item.by.rent ? item.by.rent.fact : 0;
-      const depositShare = item.fact > 0 ? Math.round(deposit / item.fact * 100) : 0;
-      const title = MONTHS[Number(item.key.slice(5, 7)) - 1] + ' ' + item.key.slice(0, 4) + ': план ' + rub(item.plan) + ', факт ' + rub(item.fact);
-      const split = filter.source === 'all' ? 'linear-gradient(to top,#3dceb0 ' + depositShare + '%,#8b7cff ' + depositShare + '%)' : '#3dceb0';
-      return '<div class="income-col" title="' + esc(title) + '"><div class="income-bars"><i class="income-plan" style="height:' + planHeight + '%"></i><i class="income-fact" style="height:' + factHeight + '%;background:' + split + '"></i></div><span>' + esc(MONTHS[Number(item.key.slice(5, 7)) - 1]) + '</span></div>';
+      const monthName = MONTHS[Number(item.key.slice(5, 7)) - 1] + ' ' + item.key.slice(0, 4);
+      const pieces = sources.map(function (source) { return { source: source, score: sourceScore(item.total.by, source.id) }; });
+      const overall = sourceScore({ all: item.total }, 'all');
+      const tip = '<strong>' + esc(monthName) + '</strong>' + pieces.map(function (piece) { return scoreText(piece.source.short, piece.score); }).join('') + (sources.length > 1 ? scoreText('Итого', overall) : '');
+      const bars = pieces.map(function (piece, index) {
+        const plan = barHeight(piece.score.plan, max);
+        const fact = barHeight(piece.score.fact, max);
+        const gap = index > 0 ? '<b class="income-gap"></b>' : '';
+        return gap + '<i class="income-plan ' + piece.source.id + '" style="height:' + plan + '%"></i><i class="income-fact ' + piece.source.id + '" style="height:' + fact + '%"></i>';
+      }).join('');
+      return '<div class="income-col" data-tip="' + esc(tip) + '" onmouseenter="showIncomeMonth(this)"><div class="income-bars">' + bars + '</div><span>' + esc(MONTHS[Number(item.key.slice(5, 7)) - 1]) + '</span></div>';
     }).join('');
-    const legend = filter.source === 'all'
-      ? '<span><i class="income-plan"></i>План</span><span><i class="income-fact deposit"></i>Факт · вклады</span><span><i class="income-fact rent"></i>Факт · аренда</span>'
-      : '<span><i class="income-plan"></i>План</span><span><i class="income-fact deposit"></i>Факт</span>';
-    return '<section class="panel"><div class="panel-head"><div><p class="eyebrow">ДИНАМИКА</p><h3>Динамика дохода от капитала</h3><p>План и факт по месяцам. Валютный доход показан рублёвым эквивалентом по текущему курсу.</p></div></div><div class="income-chart">' + cols + '</div><div class="income-legend">' + legend + '</div></section>';
+    const legend = sources.map(function (source) {
+      return '<span><i class="income-plan ' + source.id + '"></i>План · ' + esc(source.short) + '</span><span><i class="income-fact ' + source.id + '"></i>Факт · ' + esc(source.short) + '</span>';
+    }).join('');
+    return '<section class="panel"><div class="panel-head"><div><p class="eyebrow">ДИНАМИКА</p><h3>Динамика дохода от капитала</h3><p>План и факт по вкладам и аренде отдельно. Валютный доход показан рублёвым эквивалентом по текущему курсу.</p></div></div>' + periodScore(periodRows) + '<div class="income-hover" id="income-hover">Наведите на месяц</div><div class="income-chart">' + cols + '</div><div class="income-legend">' + legend + '</div></section>';
   }
+
+  window.showIncomeMonth = function (node) {
+    const box = document.getElementById('income-hover');
+    if (box && node) box.innerHTML = node.getAttribute('data-tip') || '';
+  };
 
   function moneyCell(amount, rubles, currency, known) {
     const main = esc(original(amount, currency));
@@ -426,7 +467,7 @@
     const total = sumRows(viewed);
     const chartRows = collectAll().filter(matchesSource);
     return '<div class="view-wrap"><div class="section-heading"><div><p class="eyebrow">АНАЛИТИКА</p><h2>' + esc(heading()) + '</h2><p>Проценты по вкладам и аренда. Оценочная стоимость имущества в эти суммы не входит.</p></div></div>' +
-      filters() + cards(total) + structure(total) + comparison(viewed) + chart(chartRows) + table(viewed) +
+      filters() + cards(total) + structure(total) + comparison(viewed) + chart(chartRows, viewed) + table(viewed) +
       '<section class="panel income-apart"><p class="eyebrow">ОТДЕЛЬНО ОТ ДОХОДА</p><h3>Изменение стоимости имущества</h3><p>Рост или снижение оценочной стоимости квартиры, дома и другого имущества — это изменение капитала, а не доход за период. В показатели выше оно не входит.</p></section></div>';
   };
 
