@@ -4,6 +4,12 @@
   const currencies = ['RUB', 'USD', 'EUR'];
   const periods = ['Месяц', 'Квартал', 'Год', 'Другой период'];
 
+  function esc(value) {
+    return String(value == null ? '' : value).replace(/[&<>"']/g, function (ch) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+    });
+  }
+
   function migrateAsset(asset) {
     if (!Array.isArray(asset.photos)) asset.photos = asset.photo ? [asset.photo] : [];
     if (!asset.currency) asset.currency = 'RUB';
@@ -143,9 +149,273 @@
     };
   };
 
+  function rentBucket(usage) {
+    if (usage === 'Планируется сдача в аренду') return 'planned';
+    if (usage === 'Не используется / свободно') return 'vacant';
+    if (usage === 'Сдаётся в аренду') return 'rented';
+    return '';
+  }
+
+  function rentPayStatus(payment) {
+    if (!payment) return '';
+    if (payment.status === 'Получено') return 'Получено';
+    if (payment.date && daysFromNow(payment.date) < 0) return 'Просрочено';
+    return 'Ожидается';
+  }
+
+  function periodLabel(value) {
+    if (value === 'Квартал') return 'в квартал';
+    if (value === 'Год') return 'в год';
+    return 'в месяц';
+  }
+
+  function rentMoney(amount, currency) {
+    if (typeof moneyOriginal === 'function') return moneyOriginal(amount, currency || 'RUB');
+    return rub(amount);
+  }
+
+  function areaText(area) {
+    const text = String(area || '').trim();
+    if (!text) return '';
+    return /м²|м2/i.test(text) ? text : text + ' м²';
+  }
+
+  function ensurePartRentPayments(part) {
+    if (!part || part.usage !== 'Сдаётся в аренду' || !num(part.rentAmount)) return false;
+    if (!Array.isArray(part.rentPayments)) part.rentPayments = [];
+    const start = part.rentNext || part.rentStart;
+    if (!start) return false;
+    const count = part.rentPeriod === 'Год' ? 2 : part.rentPeriod === 'Квартал' ? 5 : 13;
+    const existing = {};
+    part.rentPayments.forEach(function (payment) { existing[payment.date] = true; });
+    let date = new Date(start + 'T12:00:00');
+    let added = false;
+    for (let index = 0; index < count; index += 1) {
+      const paymentDate = isoDate(date);
+      if (!existing[paymentDate]) {
+        part.rentPayments.push({ id: uid(), date: paymentDate, amount: num(part.rentAmount), currency: part.rentCurrency || 'RUB', status: 'Ожидается' });
+        added = true;
+      }
+      if (part.rentPeriod === 'Год') date.setFullYear(date.getFullYear() + 1);
+      else if (part.rentPeriod === 'Квартал') date.setMonth(date.getMonth() + 3);
+      else date.setMonth(date.getMonth() + 1);
+    }
+    part.rentPayments.sort(function (a, b) { return String(a.date).localeCompare(String(b.date)); });
+    return added;
+  }
+
+  function rentUnits() {
+    const units = [];
+    let changed = false;
+    state.assets.forEach(function (asset) {
+      migrateAsset(asset);
+      const assetBucket = rentBucket(asset.usage || asset.usageStatus || '');
+      if (assetBucket) units.push({ bucket: assetBucket, asset: asset, part: null });
+      (asset.parts || []).forEach(function (part) {
+        const bucket = rentBucket(part.usage);
+        if (!bucket) return;
+        if (!Array.isArray(part.rentPayments)) part.rentPayments = [];
+        if (bucket === 'rented' && ensurePartRentPayments(part)) changed = true;
+        units.push({ bucket: bucket, asset: asset, part: part });
+      });
+    });
+    if (changed) save();
+    return units;
+  }
+
+  function unitAmount(unit) {
+    if (unit.part) return num(unit.part.rentAmount);
+    return num(unit.asset.rent && unit.asset.rent.amount);
+  }
+
+  function unitCurrency(unit) {
+    if (unit.part) return unit.part.rentCurrency || 'RUB';
+    return (unit.asset.rent && unit.asset.rent.currency) || unit.asset.currency || 'RUB';
+  }
+
+  function unitStart(unit) {
+    if (unit.part) return unit.part.rentStart || '';
+    const rent = unit.asset.rent || {};
+    return rent.contractStart || rent.startDate || rent.nextDate || '';
+  }
+
+  function unitNext(unit) {
+    if (unit.part) {
+      const upcoming = (unit.part.rentPayments || []).filter(function (payment) { return payment.status !== 'Получено'; }).sort(function (a, b) { return String(a.date).localeCompare(String(b.date)); })[0];
+      return upcoming ? upcoming.date : (unit.part.rentNext || '');
+    }
+    const rent = unit.asset.rent || {};
+    const upcoming = (rent.payments || []).filter(function (payment) { return payment.status !== 'Получено'; }).sort(function (a, b) { return String(a.date).localeCompare(String(b.date)); })[0];
+    return upcoming ? upcoming.date : (rent.nextDate || '');
+  }
+
+  function unitTenant(unit) {
+    if (unit.part) return unit.part.tenant || '';
+    return (unit.asset.rent && unit.asset.rent.tenant) || '';
+  }
+
+  function nextUnitPayment(unit) {
+    const list = unit.part ? (unit.part.rentPayments || []) : ((unit.asset.rent && unit.asset.rent.payments) || []);
+    return list.filter(function (payment) { return payment.status !== 'Получено'; }).sort(function (a, b) { return String(a.date).localeCompare(String(b.date)); })[0] || null;
+  }
+
+  function rentCard(unit) {
+    const part = unit.part;
+    const place = part ? (part.name || 'Помещение') : 'Весь объект';
+    const type = part ? (part.type || '') : (unit.asset.type || unit.asset.category || '');
+    const area = part ? areaText(part.area) : '';
+    const amount = unitAmount(unit);
+    const period = part ? periodLabel(part.rentPeriod) : periodLabel(unit.asset.rent && unit.asset.rent.periodicity);
+    const start = unitStart(unit);
+    const tenant = unitTenant(unit);
+    const next = unit.bucket === 'rented' ? nextUnitPayment(unit) : null;
+    const statusText = unit.bucket === 'rented' ? 'Сдано' : unit.bucket === 'vacant' ? 'Свободно' : 'Планируется';
+    const statusClass = unit.bucket === 'rented' ? 'tag-green' : unit.bucket === 'vacant' ? 'tag-blue' : 'tag-yellow';
+    const partId = part ? part.id : '';
+    const facts = '<div><span>Основной объект</span><strong>' + esc(unit.asset.name) + '</strong></div>' +
+      '<div><span>Помещение</span><strong>' + esc(place) + '</strong></div>' +
+      '<div><span>Тип</span><strong>' + esc(type || '—') + '</strong></div>' +
+      (area ? '<div><span>Площадь</span><strong>' + esc(area) + '</strong></div>' : '') +
+      '<div><span>' + (unit.bucket === 'rented' ? 'Аренда' : 'Планируемая аренда') + '</span><strong>' + (amount ? rentMoney(amount, unitCurrency(unit)) : '—') + '</strong><small>' + period + '</small></div>' +
+      '<div><span>Дата начала</span><strong>' + (start ? dateText(start) : '—') + '</strong></div>' +
+      (tenant ? '<div><span>Арендатор</span><strong>' + esc(tenant) + '</strong></div>' : '') +
+      (next ? '<div><span>Следующий платёж</span><strong>' + dateText(next.date) + '</strong><small class="' + (rentPayStatus(next) === 'Просрочено' ? 'danger' : '') + '">' + rentPayStatus(next) + '</small></div>' : '');
+    const action = unit.bucket === 'rented'
+      ? '<button type="button" class="ghost-button" onclick="openRentLease(\'' + unit.asset.id + '\',\'' + partId + '\')">Условия</button>' + (next ? '<button type="button" class="primary-button" onclick="markUnitRentReceived(\'' + unit.asset.id + '\',\'' + partId + '\',\'' + next.id + '\')">Получено</button>' : '')
+      : '<button type="button" class="primary-button" onclick="openRentLease(\'' + unit.asset.id + '\',\'' + partId + '\')">Сдать</button>';
+    return '<article class="rent-row panel"><div class="rent-row-main">' + facts + '</div><span class="tag rent-status ' + statusClass + '">' + statusText + '</span><div class="rent-row-actions">' + action + '</div></article>';
+  }
+
+  function rentalsView() {
+    const units = rentUnits();
+    const blocks = [
+      ['planned', 'Планируется к сдаче', 'Потенциальный доход. Эти суммы не входят в текущий доход, свободные деньги и капитал.'],
+      ['vacant', 'Свободно / ищем арендатора', 'Помещения без действующего договора.'],
+      ['rented', 'Сдано в аренду', 'Ожидаемые платежи появляются здесь и в календаре. Доход учитывается после отметки «Получено».']
+    ];
+    const body = blocks.map(function (block) {
+      const rows = units.filter(function (unit) { return unit.bucket === block[0]; });
+      return '<section class="rent-block"><div class="rent-block-head"><h3>' + block[1] + '</h3><span>' + rows.length + '</span></div><p>' + block[2] + '</p>' + (rows.length ? rows.map(rentCard).join('') : '<div class="rent-empty">Пока нет</div>') + '</section>';
+    }).join('');
+    return '<div class="view-wrap"><div class="section-heading"><div><p class="eyebrow">ДОХОД ОТ ИМУЩЕСТВА</p><h2>Аренда</h2><p>Те же объекты и помещения из раздела «Имущество». Повторно вводить их не нужно.</p></div></div>' + body + '</div>';
+  }
+  window.rentalsView = rentalsView;
+
+  function updateRentCount() {
+    const node = document.getElementById('rent-count');
+    if (!node || typeof state === 'undefined') return;
+    node.textContent = rentUnits().length;
+  }
+
+  window.openRentLease = function (assetId, partId) {
+    const asset = state.assets.find(function (item) { return item.id === assetId; });
+    if (!asset) return;
+    const part = partId ? (asset.parts || []).find(function (item) { return item.id === partId; }) : null;
+    if (partId && !part) return;
+    const rent = part ? part : (asset.rent || {});
+    const amount = part ? part.rentAmount : rent.amount;
+    const currency = part ? (part.rentCurrency || 'RUB') : (rent.currency || asset.currency || 'RUB');
+    const start = part ? (part.rentStart || '') : (rent.contractStart || rent.startDate || '');
+    const end = part ? (part.rentEnd || '') : (rent.contractEnd || '');
+    const period = part ? (part.rentPeriod || 'Месяц') : (rent.periodicity || 'Месяц');
+    const next = part ? (part.rentNext || part.rentStart || '') : (rent.nextDate || '');
+    const tenant = part ? (part.tenant || '') : (rent.tenant || '');
+    const phone = part ? (part.rentPhone || '') : (rent.phone || '');
+    const comment = part ? (part.comment || '') : (rent.comment || '');
+    const currencyOptions = currencies.map(function (item) { return '<option ' + (item === currency ? 'selected' : '') + '>' + item + '</option>'; }).join('');
+    const periodOptions = periods.map(function (item) { return '<option ' + (item === period ? 'selected' : '') + '>' + item + '</option>'; }).join('');
+    const field = function (label, html) { return '<div class="form-field"><label>' + label + '</label>' + html + '</div>'; };
+    document.getElementById('modal-root').innerHTML = '<div class="modal-backdrop" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-header"><h2>Сдано в аренду</h2><button type="button" class="close" onclick="closeModal()">×</button></div><form id="rent-lease-form"><div class="modal-body"><div class="form-grid">' +
+      field('ФИО или название арендатора', '<input name="tenant" value="' + esc(tenant) + '">') +
+      field('Телефон или контакт', '<input name="phone" value="' + esc(phone) + '">') +
+      field('Сумма аренды', '<input name="amount" inputmode="decimal" value="' + esc(amount || '') + '" required>') +
+      field('Валюта', '<select name="currency">' + currencyOptions + '</select>') +
+      field('Дата начала аренды', '<input name="start" type="date" value="' + esc(start) + '">') +
+      field('Дата окончания договора', '<input name="end" type="date" value="' + esc(end) + '">') +
+      field('Периодичность платежа', '<select name="period">' + periodOptions + '</select>') +
+      field('Дата следующего платежа', '<input name="next" type="date" value="' + esc(next) + '">') +
+      field('Комментарий', '<input name="comment" value="' + esc(comment) + '">') +
+      '</div></div><div class="modal-footer"><button type="button" class="ghost-button" onclick="closeModal()">Отмена</button><button class="primary-button">Сохранить</button></div></form></div></div>';
+    document.getElementById('rent-lease-form').onsubmit = function (event) {
+      event.preventDefault();
+      const form = event.target;
+      const leaseAmount = num(form.elements.amount.value);
+      if (!(leaseAmount > 0)) { alert('Укажите сумму аренды.'); return; }
+      if (part) {
+        part.usage = 'Сдаётся в аренду';
+        part.tenant = form.elements.tenant.value.trim();
+        part.rentPhone = form.elements.phone.value.trim();
+        part.rentAmount = leaseAmount;
+        part.rentCurrency = form.elements.currency.value;
+        part.rentStart = form.elements.start.value;
+        part.rentEnd = form.elements.end.value;
+        part.rentPeriod = form.elements.period.value;
+        part.rentNext = form.elements.next.value || form.elements.start.value;
+        part.comment = form.elements.comment.value.trim();
+        ensurePartRentPayments(part);
+      } else {
+        asset.usage = 'Сдаётся в аренду';
+        asset.usageStatus = asset.usage;
+        asset.rent = Object.assign({}, asset.rent || {}, {
+          tenant: form.elements.tenant.value.trim(),
+          phone: form.elements.phone.value.trim(),
+          amount: leaseAmount,
+          currency: form.elements.currency.value,
+          contractStart: form.elements.start.value,
+          startDate: form.elements.start.value,
+          contractEnd: form.elements.end.value,
+          periodicity: form.elements.period.value,
+          nextDate: form.elements.next.value || form.elements.start.value,
+          comment: form.elements.comment.value.trim(),
+          planned: true
+        });
+        ensureRentalPayments(asset);
+      }
+      save();
+      closeModal();
+      render();
+    };
+  };
+
+  window.markUnitRentReceived = function (assetId, partId, paymentId) {
+    const asset = state.assets.find(function (item) { return item.id === assetId; });
+    if (!asset) return;
+    if (partId) {
+      const part = (asset.parts || []).find(function (item) { return item.id === partId; });
+      const payment = part && (part.rentPayments || []).find(function (item) { return item.id === paymentId; });
+      if (!payment) return;
+      payment.status = 'Получено';
+      payment.receivedAt = isoDate(today);
+    } else if (asset.rent && Array.isArray(asset.rent.payments)) {
+      const payment = asset.rent.payments.find(function (item) { return item.id === paymentId; });
+      if (!payment) return;
+      payment.status = 'Получено';
+      payment.receivedAt = isoDate(today);
+    } else return;
+    save();
+    render();
+  };
+
   function rentalEvents() {
     const events = [];
-    state.assets.forEach(function (asset) { migrateAsset(asset); const rent = asset.rent || {}; (rent.payments || []).forEach(function (payment) { const overdue = payment.status !== 'Получено' && daysFromNow(payment.date) < 0; events.push({ date: payment.date, title: overdue ? 'Аренда не получена — ' + asset.name : 'Аренда — ' + asset.name, sub: rent.tenant || asset.owner || asset.name, amount: payment.amount, type: overdue ? 'rent-overdue' : 'income', status: payment.status === 'Получено' ? 'Получено' : overdue ? 'Просрочено' : 'Ожидается', id: 'rent-' + asset.id + '-' + payment.id }); }); });
+    state.assets.forEach(function (asset) {
+      migrateAsset(asset);
+      const rent = asset.rent || {};
+      if ((asset.usage || asset.usageStatus) === 'Сдаётся в аренду') {
+        (rent.payments || []).forEach(function (payment) {
+          const overdue = payment.status !== 'Получено' && daysFromNow(payment.date) < 0;
+          events.push({ date: payment.date, title: 'Аренда — ' + asset.name, sub: asset.name + (rent.tenant ? ' · ' + rent.tenant : ''), amount: payment.amount, type: overdue ? 'rent-overdue' : 'rent', status: payment.status === 'Получено' ? 'Получено' : overdue ? 'Просрочено' : 'Ожидается', id: 'rent-' + asset.id + '-' + payment.id });
+        });
+      }
+      (asset.parts || []).forEach(function (part) {
+        if (part.usage !== 'Сдаётся в аренду') return;
+        (part.rentPayments || []).forEach(function (payment) {
+          const place = asset.name + ' / ' + (part.name || 'Помещение');
+          const overdue = payment.status !== 'Получено' && daysFromNow(payment.date) < 0;
+          events.push({ date: payment.date, title: 'Аренда — ' + place, sub: place, amount: payment.amount, type: overdue ? 'rent-overdue' : 'rent', status: payment.status === 'Получено' ? 'Получено' : overdue ? 'Просрочено' : 'Ожидается', id: 'rent-part-' + asset.id + '-' + part.id + '-' + payment.id });
+        });
+      });
+    });
     return events;
   }
   const baseEventList = eventList;
@@ -155,7 +425,7 @@
     const y = calendarMonth.getFullYear(), m = calendarMonth.getMonth(), first = new Date(y, m, 1), last = new Date(y, m + 1, 0), start = (first.getDay() + 6) % 7, events = eventList();
     let cells = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map(function (day) { return '<div class="calendar-day-name">' + day + '</div>'; }).join('');
     for (let i = 0; i < start; i += 1) cells += '<div class="calendar-cell muted"></div>';
-    for (let day = 1; day <= last.getDate(); day += 1) { const date = isoDate(new Date(y, m, day)), dayEvents = events.filter(function (event) { return event.date === date; }), visible = dayEvents.slice(0, 3), hidden = dayEvents.slice(3), typeClass = function (event) { return event.type === 'payment' || event.type === 'end' || event.type === 'rent-overdue' ? 'tag-red' : 'tag-green'; }, eventHtml = function (event) { return '<div class="calendar-event ' + typeClass(event) + '"><strong>' + (event.type === 'end' ? 'Окончание вклада' : event.type === 'rent-overdue' ? 'Аренда не получена' : event.type === 'payment' ? 'Платёж' : 'Поступление') + '</strong><span>' + (event.sub || event.title) + '</span><b>' + (event.amount ? rub(event.amount) : '—') + '</b></div>'; }; cells += '<div class="calendar-cell ' + (date === isoDate(today) ? 'today-cell' : '') + '"><div class="day-number">' + day + '</div><div class="calendar-events">' + visible.map(eventHtml).join('') + '</div>' + (hidden.length ? '<div class="calendar-events calendar-events-extra">' + hidden.map(eventHtml).join('') + '</div><button class="calendar-more">＋ ещё ' + hidden.length + '</button>' : '') + '</div>'; }
+    for (let day = 1; day <= last.getDate(); day += 1) { const date = isoDate(new Date(y, m, day)), dayEvents = events.filter(function (event) { return event.date === date; }), visible = dayEvents.slice(0, 3), hidden = dayEvents.slice(3), typeClass = function (event) { return event.type === 'payment' || event.type === 'end' || event.type === 'rent-overdue' ? 'tag-red' : 'tag-green'; }, eventHtml = function (event) { const rent = event.type === 'rent' || event.type === 'rent-overdue'; const label = event.type === 'end' ? 'Окончание вклада' : event.type === 'payment' ? 'Платёж' : rent ? 'Аренда' : 'Поступление'; return '<div class="calendar-event ' + typeClass(event) + '"><strong>' + label + '</strong><span>' + esc(event.sub || event.title) + '</span><b>' + (event.amount ? rub(event.amount) : '—') + '</b>' + (rent ? '<em>' + esc(event.status || '') + '</em>' : '') + '</div>'; }; cells += '<div class="calendar-cell ' + (date === isoDate(today) ? 'today-cell' : '') + '"><div class="day-number">' + day + '</div><div class="calendar-events">' + visible.map(eventHtml).join('') + '</div>' + (hidden.length ? '<div class="calendar-events calendar-events-extra">' + hidden.map(eventHtml).join('') + '</div><button class="calendar-more">＋ ещё ' + hidden.length + '</button>' : '') + '</div>'; }
     return '<div class="view-wrap"><div class="section-heading"><div><p class="eyebrow">ПЛАНИРОВАНИЕ</p><h2>Финансовый календарь</h2><p>Зелёным — поступления аренды и процентов · красным — платежи и просрочки</p></div><button class="primary-button" onclick="openForm(\'debt\')">＋ Добавить событие</button></div><div class="panel"><div class="panel-head"><div class="calendar-controls"><button onclick="changeMonth(-1)">←</button><div class="calendar-title">' + calendarMonth.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' }) + '</div><button onclick="changeMonth(1)">→</button></div><span>' + events.length + ' событий</span></div><div class="calendar-grid">' + cells + '</div></div></div>';
   }
   calendar = enhancedCalendar;
@@ -237,7 +507,7 @@
     state.assets.forEach(function (asset) {
       const rent = asset.rent || {};
       const usage = asset.usage || asset.usageStatus || '';
-      const renting = usage === 'Сдаётся в аренду' || usage === 'Планируется сдача в аренду';
+      const liveRent = usage === 'Сдаётся в аренду';
       const payments = rent.payments || [];
       const plannedDate = rent.nextDate || rent.startDate || '';
       let plannedDateCovered = false;
@@ -247,9 +517,18 @@
           if (inCurrentMonth(payment.receivedAt || payment.date)) rentReceived += num(payment.amount);
           return;
         }
-        if (renting && inNext30Days(payment.date)) rentExpected += num(payment.amount);
+        if (liveRent && inNext30Days(payment.date)) rentExpected += num(payment.amount);
       });
-      if (renting && !plannedDateCovered && inNext30Days(plannedDate) && num(rent.amount)) rentExpected += num(rent.amount);
+      if (liveRent && !plannedDateCovered && inNext30Days(plannedDate) && num(rent.amount)) rentExpected += num(rent.amount);
+      (asset.parts || []).forEach(function (part) {
+        (part.rentPayments || []).forEach(function (payment) {
+          if (payment.status === 'Получено') {
+            if (inCurrentMonth(payment.receivedAt || payment.date)) rentReceived += num(payment.amount);
+            return;
+          }
+          if (part.usage === 'Сдаётся в аренду' && inNext30Days(payment.date)) rentExpected += num(payment.amount);
+        });
+      });
     });
     const receivedTotal = depositReceived + rentReceived;
     const expectedTotal = depositExpected + rentExpected;
@@ -260,4 +539,21 @@
   setTimeout(refreshRentalSummary, 0);
   document.getElementById('main-nav').addEventListener('click', function () { setTimeout(refreshRentalSummary, 0); });
   document.querySelector('.top-actions').addEventListener('click', function () { setTimeout(refreshRentalSummary, 0); });
+
+  const baseRender = render;
+  render = function () {
+    if (activeView === 'rentals') {
+      document.getElementById('app-view').innerHTML = rentalsView();
+      document.querySelectorAll('.nav-item').forEach(function (button) { button.classList.toggle('active', button.dataset.view === 'rentals'); });
+      document.getElementById('page-title').textContent = 'Аренда';
+      document.getElementById('deposit-count').textContent = state.deposits.length;
+      document.getElementById('debt-count').textContent = obligations().length;
+      updateRentCount();
+      document.getElementById('today-label').textContent = today.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+      return;
+    }
+    baseRender();
+    updateRentCount();
+  };
+  updateRentCount();
 }());

@@ -823,9 +823,12 @@
       if (!saved) return result;
       const partBox = form.querySelector('#part-rows');
       if (partBox) {
+        const previousParts = Array.isArray(saved.parts) ? saved.parts : [];
         saved.parts = [...partBox.querySelectorAll('.part-row')].map(function (row) {
-          return {
-            id: row.querySelector('[name="part-id"]').value || uid(),
+          const id = row.querySelector('[name="part-id"]').value || uid();
+          const previous = previousParts.find(function (part) { return part.id === id; }) || {};
+          return Object.assign({}, previous, {
+            id: id,
             name: row.querySelector('[name="part-name"]').value.trim(),
             type: row.querySelector('[name="part-type"]').value,
             area: row.querySelector('[name="part-area"]').value.trim(),
@@ -834,7 +837,7 @@
             rentAmount: num(row.querySelector('[name="part-rent"]').value),
             rentStart: row.querySelector('[name="part-start"]').value,
             comment: row.querySelector('[name="part-comment"]').value.trim()
-          };
+          });
         }).filter(function (part) { return part.name; });
       }
       const valueCurrency = saved.valueCurrency || 'RUB';
