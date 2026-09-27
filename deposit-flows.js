@@ -423,12 +423,62 @@
     };
   }
 
+  function attachRecordCurrency(form, type, id) {
+    const grid = form.querySelector('.form-grid');
+    if (!grid || grid.querySelector('[name="currency"]')) return;
+    const list = state[type + 's'] || [];
+    const record = id ? list.find(function (item) { return item.id === id; }) : null;
+    const code = (record && record.currency) || 'RUB';
+    const rate = record && record.fxRate != null && record.fxRate !== '' ? String(record.fxRate).replace('.', ',') : '';
+    const amountName = type === 'account' ? 'balance' : 'total';
+    grid.insertAdjacentHTML('beforeend', '<div class="form-field"><label>Валюта</label><select name="currency" data-currency-catalog="1"><option>' + esc(code) + '</option></select></div><div class="form-field record-fx-rate"' + (code === 'RUB' ? ' hidden' : '') + '><label>Курс к рублю</label><input name="fxRate" inputmode="decimal" autocomplete="off" value="' + esc(rate) + '"></div><p class="record-fx-eq"' + (code === 'RUB' ? ' hidden' : '') + '></p>');
+    const select = grid.querySelector('[name="currency"]');
+    if (window.attachCurrencyPicker) window.attachCurrencyPicker(select, { allowRub: true });
+    const rateWrap = grid.querySelector('.record-fx-rate');
+    const eq = grid.querySelector('.record-fx-eq');
+    const rateInput = grid.querySelector('[name="fxRate"]');
+    const sync = function () {
+      const foreign = select.value && select.value !== 'RUB';
+      rateWrap.hidden = !foreign;
+      eq.hidden = !foreign;
+      if (!foreign) return;
+      const amount = num(form.elements[amountName] && form.elements[amountName].value);
+      const fx = num(rateInput.value);
+      eq.textContent = fx > 0 ? 'Эквивалент: ' + rub(roundMoney(amount * fx)) : 'Укажите курс к рублю';
+    };
+    select.addEventListener('change', sync);
+    rateInput.addEventListener('input', sync);
+    if (form.elements[amountName]) form.elements[amountName].addEventListener('input', sync);
+    sync();
+    const previousSubmit = form.onsubmit;
+    form.onsubmit = function (event) {
+      if (window.currencyReady && !window.currencyReady(select)) { event.preventDefault(); alert('Выберите валюту.'); return; }
+      const chosen = select.value || 'RUB';
+      const fx = chosen === 'RUB' ? '' : num(rateInput.value);
+      if (chosen !== 'RUB' && !(fx > 0)) { event.preventDefault(); alert('Укажите курс к рублю.'); return; }
+      const before = (state[type + 's'] || []).map(function (item) { return item.id; });
+      if (previousSubmit) previousSubmit.call(form, event);
+      const saved = id
+        ? (state[type + 's'] || []).find(function (item) { return item.id === id; })
+        : (state[type + 's'] || []).filter(function (item) { return before.indexOf(item.id) < 0; })[0];
+      if (!saved) return;
+      saved.currency = chosen;
+      saved.fxRate = fx;
+      save();
+      render();
+    };
+  }
+
   const baseOpenForm = window.openForm;
   window.openForm = function (type, id) {
     baseOpenForm(type, id);
     const form = document.getElementById('record-form');
     if (!form) return;
-    if (type === 'account' || type === 'debt') { keepMovements(form, type, id); return; }
+    if (type === 'account' || type === 'debt') {
+      keepMovements(form, type, id);
+      attachRecordCurrency(form, type, id);
+      return;
+    }
     if (type !== 'deposit' && type !== 'quick') return;
     const grid = form.querySelector('.form-grid');
     if (!grid || grid.querySelector('[name="depositPurpose"]')) return;

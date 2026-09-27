@@ -1,6 +1,4 @@
 (function () {
-  const currencies = ['RUB', 'USD', 'EUR', 'AED'];
-
   function esc(value) {
     return String(value ?? '').replace(/[&<>"']/g, function (ch) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
@@ -79,10 +77,12 @@
   }
 
   function moneyOriginal(amount, currency) {
+    const code = currency || 'RUB';
+    if (code === 'RUB') return rub(amount);
     const formatted = moneyGrouped(amount);
-    if (currency === 'USD') return '$' + formatted;
-    if (currency === 'EUR') return '€' + formatted;
-    return rub(amount);
+    if (code === 'USD') return formatted + ' $';
+    if (code === 'EUR') return formatted + ' €';
+    return formatted + ' ' + code;
   }
   window.moneyOriginal = moneyOriginal;
 
@@ -129,11 +129,23 @@
     return grouped;
   }
 
+  function safeRate(safe) {
+    if (!safe || !safe.currency || safe.currency === 'RUB') return 1;
+    if (num(safe.currentRate) > 0) return num(safe.currentRate);
+    return liveRate(safe.currency) || 0;
+  }
+
+  function safeRub(amount, safe) {
+    if (!safe || !safe.currency || safe.currency === 'RUB') return num(amount);
+    const rate = safeRate(safe);
+    return rate > 0 ? num(amount) * rate : null;
+  }
+
   function safeTotalRub() {
     let known = true;
     let total = 0;
     (state.safes || []).forEach(function (safe) {
-      const rubles = toRub(safeBalance(safe), safe.currency);
+      const rubles = safeRub(safeBalance(safe), safe);
       if (rubles == null) known = false;
       else total += rubles;
     });
@@ -208,7 +220,7 @@
       return '<strong>' + moneyOriginal(grouped[currency], currency) + '</strong>';
     });
     const rubles = safeTotalRub();
-    const foreignMissing = !rubles.known && (state.safes || []).some(function (safe) { return safe.currency !== 'RUB' && !liveRate(safe.currency); });
+    const foreignMissing = !rubles.known && (state.safes || []).some(function (safe) { return safe.currency !== 'RUB' && !liveRate(safe.currency, safe); });
     let rubText = '≈ ' + rub(rubles.total);
     if (!state.safes.length) rubText = rub(0);
     else if (foreignMissing && rubles.total === 0) rubText = 'курс не задан';
@@ -245,7 +257,11 @@
       const tone = op.direction === 'out' ? 'danger' : 'positive';
       return '<div class="safe-op"><div><strong class="' + tone + '">' + sign + ' ' + moneyOriginal(Math.abs(num(op.amount)), op.currency || safe.currency) + '</strong><span>' + dateText(op.date) + (op.comment ? ' · ' + esc(op.comment) : '') + '</span></div><button type="button" class="ghost-button" onclick="removeSafeOperation(\'' + safe.id + '\',\'' + op.id + '\')">Удалить</button></div>';
     }).join('');
-    return '<article class="safe-card panel"><div class="safe-card-head"><div><p class="eyebrow">' + esc(safe.currency) + '</p><h3>' + esc(safe.name) + '</h3><span>' + (safe.comment ? esc(safe.comment) : 'Без комментария') + '</span></div><div class="safe-balance"><small>В сейфе</small><strong>' + moneyOriginal(balance, safe.currency) + '</strong><em>По текущему курсу: ' + rubApprox(balance, safe.currency) + '</em></div></div><div class="safe-meta"><span>Текущий курс <b>' + rateLabel(safe.currency) + '</b></span><span>Обновлено <b>' + (updated ? dateText(updated) : '—') + '</b></span></div><div class="button-row"><button class="primary-button" type="button" onclick="openSafeOperation(\'' + safe.id + '\',\'in\')">+ Положить деньги</button><button class="ghost-button" type="button" onclick="openSafeOperation(\'' + safe.id + '\',\'out\')">− Забрать деньги</button><button class="ghost-button" type="button" onclick="openSafeForm(\'' + safe.id + '\')">Изменить</button><button class="ghost-button" type="button" onclick="removeSafe(\'' + safe.id + '\')">Удалить</button></div><div class="safe-history"><h4>История операций</h4>' + (rows || '<div class="empty">Операций пока нет</div>') + '</div></article>';
+    const rate = safeRate(safe);
+    const foreignSafe = safe.currency && safe.currency !== 'RUB';
+    const equivalent = !foreignSafe ? rub(balance) : (rate > 0 ? rub(balance * rate) : 'курс не задан');
+    const rateShown = !foreignSafe ? '1,00 ₽' : (rate > 0 ? new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(rate) + ' ₽' : 'не задан');
+    return '<article class="safe-card panel"><div class="safe-card-head"><div><p class="eyebrow">' + esc(safe.currency) + '</p><h3>' + esc(safe.name) + '</h3><span>' + (safe.comment ? esc(safe.comment) : 'Без комментария') + '</span></div><div class="safe-balance"><small>В сейфе</small><strong>' + moneyOriginal(balance, safe.currency) + '</strong><em>По текущему курсу: ' + equivalent + '</em></div></div><div class="safe-meta"><span>Текущий курс <b>' + rateShown + '</b></span><span>Обновлено <b>' + (updated ? dateText(updated) : '—') + '</b></span></div><div class="button-row"><button class="primary-button" type="button" onclick="openSafeOperation(\'' + safe.id + '\',\'in\')">+ Положить деньги</button><button class="ghost-button" type="button" onclick="openSafeOperation(\'' + safe.id + '\',\'out\')">− Забрать деньги</button><button class="ghost-button" type="button" onclick="openSafeForm(\'' + safe.id + '\')">Изменить</button><button class="ghost-button" type="button" onclick="removeSafe(\'' + safe.id + '\')">Удалить</button></div><div class="safe-history"><h4>История операций</h4>' + (rows || '<div class="empty">Операций пока нет</div>') + '</div></article>';
   }
 
   function safeView() {
@@ -270,14 +286,11 @@
     ensureCapitalState();
     const safe = state.safes.find(function (item) { return item.id === id; }) || { name: '', currency: 'USD', comment: '', operations: [] };
     const locked = (safe.operations || []).length > 0;
-    const currencyChoices = currencies.slice();
-    if (safe.currency && currencyChoices.indexOf(safe.currency) < 0) currencyChoices.push(safe.currency);
-    const options = currencyChoices.map(function (currency) {
-      return '<option ' + (safe.currency === currency ? 'selected' : '') + '>' + currency + '</option>';
-    }).join('');
+    const safeCode = safe.currency || 'USD';
     modalShell(id ? 'Изменить сейф' : 'Новый сейф',
       field('Название', '<input name="name" value="' + esc(safe.name) + '" required>') +
-      field('Валюта', '<select name="currency"' + (locked ? ' disabled' : '') + '>' + options + '</select>') +
+      field('Валюта', '<select name="currency" data-currency-catalog="1"' + (locked ? ' disabled' : '') + '><option>' + esc(safeCode) + '</option></select>') +
+      '<div class="form-field safe-rate-field"' + (safeCode === 'RUB' ? ' hidden' : '') + '><label>Курс к рублю</label><input name="currentRate" inputmode="decimal" value="' + esc(safe.currentRate != null && safe.currentRate !== '' ? String(safe.currentRate).replace('.', ',') : '') + '"></div>' +
       field('Комментарий', '<input name="comment" value="' + esc(safe.comment || '') + '">') +
       field('Учитывать для покрытия обязательств', '<select name="coverObligations"><option ' + (safe.coverObligations === false ? '' : 'selected') + '>Да</option><option ' + (safe.coverObligations === false ? 'selected' : '') + '>Нет</option></select>') +
       (id ? '' : field('Начальный остаток', '<input name="opening" inputmode="decimal" placeholder="0">')) +
@@ -287,14 +300,18 @@
         const name = form.elements.name.value.trim();
         if (!name) { alert('Укажите название сейфа.'); return; }
         const currency = locked ? safe.currency : form.elements.currency.value;
+        if (!locked && form.elements.currency && window.currencyReady && !window.currencyReady(form.elements.currency)) { alert('Выберите валюту.'); return; }
+        if (currency !== 'RUB' && !(num(form.elements.currentRate && form.elements.currentRate.value) > 0) && !(typeof liveRate === 'function' && liveRate(currency) > 0)) { alert('Укажите курс к рублю.'); return; }
         const cover = form.elements.coverObligations.value !== 'Нет';
+        const rateValue = currency === 'RUB' ? '' : num(form.elements.currentRate && form.elements.currentRate.value);
         if (id) {
           safe.name = name;
           safe.comment = form.elements.comment.value.trim();
           safe.currency = currency;
+          safe.currentRate = rateValue;
           safe.coverObligations = cover;
         } else {
-          const created = { id: uid(), name: name, currency: currency, comment: form.elements.comment.value.trim(), operations: [], coverObligations: cover };
+          const created = { id: uid(), name: name, currency: currency, currentRate: rateValue, comment: form.elements.comment.value.trim(), operations: [], coverObligations: cover };
           const opening = num(form.elements.opening && form.elements.opening.value);
           if (opening > 0) created.operations.push({ id: uid(), date: isoDate(today), amount: opening, currency: currency, direction: 'in', comment: 'Начальный остаток' });
           state.safes.push(created);
@@ -303,6 +320,15 @@
         closeModal();
         render();
       });
+    const safeForm = document.getElementById('safe-form');
+    const safeCurrency = safeForm && safeForm.querySelector('[name="currency"]');
+    const safeRate = safeForm && safeForm.querySelector('.safe-rate-field');
+    const syncSafeRate = function () {
+      if (!safeRate || !safeCurrency) return;
+      safeRate.hidden = (safeCurrency.value || 'RUB') === 'RUB';
+    };
+    if (safeCurrency) safeCurrency.addEventListener('change', syncSafeRate);
+    syncSafeRate();
   };
 
   window.openSafeOperation = function (id, direction) {
@@ -580,16 +606,12 @@
     const options = ['Предстоит', 'Оплачено', 'Просрочено'].map(function (item) {
       return '<option ' + (status === item ? 'selected' : '') + '>' + item + '</option>';
     }).join('');
-    const currencyCodes = ['RUB', 'USD', 'EUR', 'AED'];
-    if (currency && currencyCodes.indexOf(currency) < 0) currencyCodes.push(currency);
-    const currencies = currencyCodes.map(function (item) {
-      return '<option ' + (currency === item ? 'selected' : '') + '>' + item + '</option>';
-    }).join('');
+    const currencies = '<option>' + esc(currency || 'RUB') + '</option>';
     const storedPlan = payment.planRate != null && payment.planRate !== '' && num(payment.planRate) > 0 ? num(payment.planRate) : 0;
     const shownPlan = storedPlan || (currency !== 'RUB' ? (liveRate(currency) || 0) : 0);
     const comment = payment.comment || '';
     const commentOpen = String(comment).trim() !== '';
-    return '<div class="payment-row payment-plan"><input name="payment-id" type="hidden" value="' + esc(payment.id || '') + '"><input class="pay-date" name="payment-date" type="date" title="Дата" value="' + esc(payment.date || '') + '"><input class="pay-amount" name="payment-amount" inputmode="decimal" placeholder="Сумма" title="Сумма" value="' + esc(payment.amount ?? '') + '"><select class="pay-currency" name="payment-currency" title="Валюта">' + currencies + '</select><select class="pay-status" name="payment-status" title="Статус">' + options + '</select><label class="payment-plan-field pay-rate">Курс<input name="payment-plan-rate" inputmode="decimal" title="Курс для этого платежа. Пустое значение равно курсу программы" value="' + esc(shownPlan ? formatDecimal(shownPlan) : '') + '"></label><strong class="pay-rub-eq"></strong><button type="button" class="pay-note-toggle">' + (commentOpen ? 'Скрыть комментарий' : 'Комментарий') + '</button><button type="button" class="ghost-button pay-delete" onclick="this.parentElement.remove()">Удалить</button><label class="payment-comment"' + (commentOpen ? '' : ' hidden') + '><input name="payment-comment" placeholder="Комментарий" value="' + esc(comment) + '"></label><div class="payment-fact"><label>Дата оплаты<input name="payment-paid-date" type="date" value="' + esc(payment.paidDate || '') + '"></label><label>Оплачено<input name="payment-paid-amount" inputmode="decimal" value="' + esc(payment.paidAmount ?? '') + '"></label><label class="payment-rate-field">Курс оплаты<input name="payment-rate" inputmode="decimal" value="' + esc(payment.payRate != null && payment.payRate !== '' ? formatDecimal(payment.payRate) : '') + '"></label><label class="payment-rub-field">Потрачено, ₽<input name="payment-rub" inputmode="decimal" data-manual="' + (payment.rubActual != null && payment.rubActual !== '' ? '1' : '0') + '" value="' + esc(payment.rubActual ?? '') + '"></label></div></div>';
+    return '<div class="payment-row payment-plan"><input name="payment-id" type="hidden" value="' + esc(payment.id || '') + '"><input class="pay-date" name="payment-date" type="date" title="Дата" value="' + esc(payment.date || '') + '"><input class="pay-amount" name="payment-amount" inputmode="decimal" placeholder="Сумма" title="Сумма" value="' + esc(payment.amount ?? '') + '"><select class="pay-currency" name="payment-currency" data-currency-catalog="1" title="Валюта">' + currencies + '</select><select class="pay-status" name="payment-status" title="Статус">' + options + '</select><label class="payment-plan-field pay-rate">Курс<input name="payment-plan-rate" inputmode="decimal" title="Курс для этого платежа. Пустое значение равно курсу программы" value="' + esc(shownPlan ? formatDecimal(shownPlan) : '') + '"></label><strong class="pay-rub-eq"></strong><button type="button" class="pay-note-toggle">' + (commentOpen ? 'Скрыть комментарий' : 'Комментарий') + '</button><button type="button" class="ghost-button pay-delete" onclick="this.parentElement.remove()">Удалить</button><label class="payment-comment"' + (commentOpen ? '' : ' hidden') + '><input name="payment-comment" placeholder="Комментарий" value="' + esc(comment) + '"></label><div class="payment-fact"><label>Дата оплаты<input name="payment-paid-date" type="date" value="' + esc(payment.paidDate || '') + '"></label><label>Оплачено<input name="payment-paid-amount" inputmode="decimal" value="' + esc(payment.paidAmount ?? '') + '"></label><label class="payment-rate-field">Курс оплаты<input name="payment-rate" inputmode="decimal" value="' + esc(payment.payRate != null && payment.payRate !== '' ? formatDecimal(payment.payRate) : '') + '"></label><label class="payment-rub-field">Потрачено, ₽<input name="payment-rub" inputmode="decimal" data-manual="' + (payment.rubActual != null && payment.rubActual !== '' ? '1' : '0') + '" value="' + esc(payment.rubActual ?? '') + '"></label></div></div>';
   }
 
   function prefillFact(row) {
@@ -1036,7 +1058,7 @@
   }
   function financialCoverage() {
     ensureCapitalState();
-    const accounts = state.accounts.filter(usableForObligations).reduce(function (sum, item) { return sum + num(item.balance); }, 0);
+    const accounts = state.accounts.filter(usableForObligations).reduce(function (sum, item) { return sum + (typeof accountRub === 'function' ? accountRub(item) : num(item.balance)); }, 0);
     const deposits = state.deposits.filter(function (item) { return usableForObligations(item) && !item.closed; }).reduce(function (sum, item) { return sum + num(item.current); }, 0);
     let safe = 0;
     (state.safes || []).forEach(function (item) {

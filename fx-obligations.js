@@ -1,39 +1,8 @@
 (function () {
-  // Новую валюту достаточно добавить в один из списков: код и название. Расчёт от кода не зависит.
-  const FX_MAIN = [
-    { code: 'RUB', title: 'Российский рубль' },
-    { code: 'USD', title: 'Доллар США' },
-    { code: 'EUR', title: 'Евро' },
-    { code: 'AED', title: 'Дирхам ОАЭ' }
-  ];
-  const FX_EXTRA = [
-    { code: 'GBP', title: 'Фунт стерлингов' },
-    { code: 'CHF', title: 'Швейцарский франк' },
-    { code: 'CNY', title: 'Китайский юань' },
-    { code: 'TRY', title: 'Турецкая лира' },
-    { code: 'GEL', title: 'Грузинский лари' },
-    { code: 'AMD', title: 'Армянский драм' },
-    { code: 'AZN', title: 'Азербайджанский манат' },
-    { code: 'KZT', title: 'Казахстанский тенге' },
-    { code: 'UZS', title: 'Узбекский сум' }
-  ];
-  const FX_OTHER = '__OTHER__';
-  const FX_CURRENCIES = FX_MAIN.concat(FX_EXTRA);
-  window.fxCurrencyCatalog = FX_CURRENCIES.map(function (item) { return { code: item.code, title: item.title }; });
-
   function esc(value) {
     return String(value == null ? '' : value).replace(/[&<>"']/g, function (ch) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
     });
-  }
-
-  function codes() {
-    return FX_CURRENCIES.map(function (item) { return item.code; });
-  }
-
-  function titleOf(code) {
-    const found = FX_CURRENCIES.filter(function (item) { return item.code === code; })[0];
-    return found ? found.code + ' — ' + found.title : code;
   }
 
   function moneyFx(amount, currency) {
@@ -143,63 +112,11 @@
     return fxLines(asset).reduce(function (sum, line) { return sum + line.rub; }, 0);
   };
 
-  function isMain(code) {
-    return FX_MAIN.some(function (item) { return item.code === code; });
-  }
-
-  function optionTags(list, selected) {
-    return list.map(function (item) {
-      return '<option value="' + esc(item.code) + '"' + (item.code === selected ? ' selected' : '') + '>' + esc(item.code + ' — ' + item.title) + '</option>';
-    }).join('');
-  }
-
-  function mainOptions(selected, allowRub) {
-    const mains = allowRub ? FX_MAIN : FX_MAIN.filter(function (item) { return item.code !== 'RUB'; });
-    const useOther = !!(selected && !isMain(selected));
-    const current = useOther ? FX_OTHER : (selected || (allowRub ? 'RUB' : 'AED'));
-    return optionTags(mains, current) + '<option value="' + FX_OTHER + '"' + (current === FX_OTHER ? ' selected' : '') + '>Другая валюта</option>';
-  }
-
-  function extraOptions(selected) {
-    const list = FX_EXTRA.slice();
-    if (selected && !isMain(selected) && !list.some(function (item) { return item.code === selected; })) list.push({ code: selected, title: selected });
-    return '<option value="">Выберите валюту</option>' + optionTags(list, selected && !isMain(selected) ? selected : '');
-  }
-
-  function ensureCurrencyOption(select, code) {
-    if (!select || !code || [...select.options].some(function (option) { return option.value === code; })) return;
-    select.add(new Option(titleOf(code), code));
-  }
-
   function selectedCode(form) {
-    const main = form.querySelector('[name="fx-currency-main"]');
-    const extra = form.querySelector('[name="fx-other-currency"]');
     const field = form.querySelector('[name="currency"]');
-    if (main && main.value === FX_OTHER) return (extra && extra.value) || '';
-    if (main && main.value && main.value !== FX_OTHER) return main.value;
-    return (field && field.value) || 'RUB';
-  }
-
-  function writeCurrency(form, code) {
-    const field = form.querySelector('[name="currency"]');
-    if (!field || !code) return;
-    ensureCurrencyOption(field, code);
-    field.value = code;
-  }
-
-  function reflectCurrency(form, code) {
-    const main = form.querySelector('[name="fx-currency-main"]');
-    const extra = form.querySelector('[name="fx-other-currency"]');
-    const extraWrap = form.querySelector('.fx-other-currency');
-    if (!main) return;
-    const current = code || 'RUB';
-    main.innerHTML = mainOptions(current, true);
-    main.value = isMain(current) ? current : FX_OTHER;
-    if (extra) {
-      extra.innerHTML = extraOptions(current);
-      extra.value = isMain(current) ? '' : current;
-    }
-    if (extraWrap) extraWrap.hidden = isMain(current);
+    const code = field && field.value;
+    if (!code || code === '__OTHER__' || code === '__ADD__') return '';
+    return code;
   }
 
   function shiftHtml(left, prior, rate) {
@@ -228,7 +145,7 @@
   function legRow(leg) {
     leg = leg || {};
     const code = leg.currency && leg.currency !== 'RUB' ? leg.currency : 'USD';
-    return '<div class="fx-leg"><input name="fx-id" type="hidden" value="' + esc(leg.id || '') + '"><input name="fx-prior" type="hidden" value="' + esc(leg.priorRate != null ? leg.priorRate : '') + '"><label>Валюта<select name="fx-currency">' + mainOptions(code, false) + '</select></label><label>Сумма<input name="fx-amount" inputmode="decimal" autocomplete="off" value="' + esc(leg.amount != null && leg.amount !== '' ? formatMoneyInput(leg.amount) : '') + '"></label><label>Текущий курс<input name="fx-rate" inputmode="decimal" autocomplete="off" value="' + esc(leg.currentRate != null && leg.currentRate !== '' ? String(leg.currentRate).replace('.', ',') : '') + '"></label><button type="button" class="ghost-button fx-leg-remove">Удалить</button><p class="fx-leg-preview"></p></div>';
+    return '<div class="fx-leg"><input name="fx-id" type="hidden" value="' + esc(leg.id || '') + '"><input name="fx-prior" type="hidden" value="' + esc(leg.priorRate != null ? leg.priorRate : '') + '"><label>Валюта<select name="fx-currency" data-currency-catalog="1"><option>' + esc(code) + '</option></select></label><label>Сумма<input name="fx-amount" inputmode="decimal" autocomplete="off" value="' + esc(leg.amount != null && leg.amount !== '' ? formatMoneyInput(leg.amount) : '') + '"></label><label>Текущий курс<input name="fx-rate" inputmode="decimal" autocomplete="off" value="' + esc(leg.currentRate != null && leg.currentRate !== '' ? String(leg.currentRate).replace('.', ',') : '') + '"></label><button type="button" class="ghost-button fx-leg-remove">Удалить</button><p class="fx-leg-preview"></p></div>';
   }
 
   function historyHtml(payments, currency) {
@@ -246,7 +163,7 @@
     const currencyField = form.querySelector('[name="currency"]');
     if (!block || !currencyField) return;
     const currency = selectedCode(form) || 'RUB';
-    const foreign = currency !== 'RUB' && currency !== FX_OTHER;
+    const foreign = !!selectedCode(form) && currency !== 'RUB';
     block.hidden = !foreign;
     const stale = form.querySelector('.fx-asset-note');
     if (stale) stale.hidden = foreign;
@@ -295,12 +212,10 @@
         if (label) label.textContent = 'Валюта';
       }
       const stored = asset.currency || currency.value || 'RUB';
-      currency.innerHTML = optionTags(FX_CURRENCIES, stored);
-      ensureCurrencyOption(currency, stored);
+      currency.innerHTML = '<option value="' + esc(stored) + '">' + esc(stored) + '</option>';
       currency.value = stored;
-      currency.classList.add('fx-currency-store');
-      currency.insertAdjacentHTML('afterend', '<select name="fx-currency-main">' + mainOptions(stored, true) + '</select>');
-      if (wrap) wrap.insertAdjacentHTML('afterend', '<div class="form-field fx-other-currency"' + (isMain(stored) ? ' hidden' : '') + '><label>Другая валюта</label><select name="fx-other-currency">' + extraOptions(stored) + '</select></div>');
+      currency.dataset.currencyCatalog = '1';
+      if (window.attachCurrencyPicker) window.attachCurrencyPicker(currency, { allowRub: true });
     }
     ['rateMode', 'initialRate'].forEach(function (name) {
       const field = form.querySelector('[name="' + name + '"]');
@@ -319,7 +234,7 @@
     }
     const host = (currency && currency.closest('.form-field')) || form.querySelector('.form-grid');
     if (!host || form.querySelector('.fx-calc')) return;
-    host.insertAdjacentHTML('afterend', '<div class="fx-calc" hidden data-prior-rate="' + esc(asset.priorRate != null && asset.priorRate !== '' ? asset.priorRate : '') + '"><h4>Валютный расчёт</h4><div class="fx-rate-slot"></div><div class="fx-readout"><div><span>Стоимость</span><strong data-fx="price"></strong></div><div><span>Текущий курс</span><strong data-fx="rate"></strong></div><div><span>Оплачено</span><strong data-fx="paid"></strong></div><div><span>Фактически вложено</span><strong data-fx="invested"></strong></div><div><span>Осталось</span><strong data-fx="left"></strong></div><div><span>Остаток по текущему курсу</span><strong data-fx="left-rub"></strong></div></div><p class="fx-shift" hidden></p><div class="fx-history"></div><button type="button" class="ghost-button fx-add-leg">+ Добавить валютную часть</button><div class="fx-pay-panel" hidden><div class="fx-pay-grid"><label>Дата платежа<input name="fx-pay-date" type="date" value="' + isoDate(today) + '"></label><label>Сумма платежа в валюте<input name="fx-pay-amount" inputmode="decimal" autocomplete="off"></label><label>Валюта<select name="fx-pay-main">' + mainOptions(asset.currency && asset.currency !== 'RUB' ? asset.currency : 'AED', false) + '</select></label><label class="fx-pay-other"' + (asset.currency && !isMain(asset.currency) ? '' : ' hidden') + '>Другая валюта<select name="fx-pay-other">' + extraOptions(asset.currency && !isMain(asset.currency) ? asset.currency : '') + '</select></label><label>Курс к рублю на дату платежа<input name="fx-pay-rate" inputmode="decimal" autocomplete="off"></label><label>Эквивалент платежа в рублях<input name="fx-pay-rub" inputmode="decimal" autocomplete="off" readonly></label></div><button type="button" class="primary-button fx-pay-save">Сохранить платёж</button></div></div>');
+    host.insertAdjacentHTML('afterend', '<div class="fx-calc" hidden data-prior-rate="' + esc(asset.priorRate != null && asset.priorRate !== '' ? asset.priorRate : '') + '"><h4>Валютный расчёт</h4><div class="fx-rate-slot"></div><div class="fx-readout"><div><span>Стоимость</span><strong data-fx="price"></strong></div><div><span>Текущий курс</span><strong data-fx="rate"></strong></div><div><span>Оплачено</span><strong data-fx="paid"></strong></div><div><span>Фактически вложено</span><strong data-fx="invested"></strong></div><div><span>Осталось</span><strong data-fx="left"></strong></div><div><span>Остаток по текущему курсу</span><strong data-fx="left-rub"></strong></div></div><p class="fx-shift" hidden></p><div class="fx-history"></div><button type="button" class="ghost-button fx-add-leg">+ Добавить валютную часть</button><div class="fx-pay-panel" hidden><div class="fx-pay-grid"><label>Дата платежа<input name="fx-pay-date" type="date" value="' + isoDate(today) + '"></label><label>Сумма платежа в валюте<input name="fx-pay-amount" inputmode="decimal" autocomplete="off"></label><label>Валюта<select name="fx-pay-currency" data-currency-catalog="1"><option>' + esc(asset.currency && asset.currency !== 'RUB' ? asset.currency : 'AED') + '</option></select></label><label>Курс к рублю на дату платежа<input name="fx-pay-rate" inputmode="decimal" autocomplete="off"></label><label>Эквивалент платежа в рублях<input name="fx-pay-rub" inputmode="decimal" autocomplete="off" readonly></label></div><button type="button" class="primary-button fx-pay-save">Сохранить платёж</button></div></div>');
     const block = form.querySelector('.fx-calc');
     form._fxPayments = [];
     if (asset.priorRate != null && asset.priorRate !== '') block.dataset.priorRate = asset.priorRate;
@@ -335,12 +250,9 @@
     const payAmount = block.querySelector('[name="fx-pay-amount"]');
     const payRate = block.querySelector('[name="fx-pay-rate"]');
     const payRub = block.querySelector('[name="fx-pay-rub"]');
-    const payMain = block.querySelector('[name="fx-pay-main"]');
-    const payOther = block.querySelector('[name="fx-pay-other"]');
-    const payOtherWrap = block.querySelector('.fx-pay-other');
+    const payCurrency = block.querySelector('[name="fx-pay-currency"]');
     function payCode() {
-      if (payMain && payMain.value === FX_OTHER) return (payOther && payOther.value) || '';
-      return (payMain && payMain.value) || selectedCode(form) || '';
+      return (payCurrency && payCurrency.value) || selectedCode(form) || '';
     }
     function refillPay() {
       const amount = num(payAmount.value);
@@ -353,12 +265,10 @@
     payRub.addEventListener('input', function () { payRub.dataset.manual = '1'; });
     block.querySelector('.fx-add-leg').addEventListener('click', function () {
       const code = selectedCode(form);
-      if (code && code !== 'RUB') {
-        payMain.innerHTML = mainOptions(code, false);
-        payMain.value = isMain(code) ? code : FX_OTHER;
-        payOther.innerHTML = extraOptions(code);
-        payOther.value = isMain(code) ? '' : code;
-        payOtherWrap.hidden = isMain(code);
+      if (payCurrency && code && code !== 'RUB') {
+        if (![...payCurrency.options].some(function (option) { return option.value === code; })) payCurrency.add(new Option(code, code));
+        payCurrency.value = code;
+        if (payCurrency._currencyRefresh) payCurrency._currencyRefresh();
       }
       payPanel.hidden = false;
       payRub.dataset.manual = '';
@@ -398,25 +308,7 @@
     });
     form.addEventListener('change', function (event) {
       if (!event.target) return;
-      if (event.target.name === 'fx-currency-main') {
-        const extraWrap = form.querySelector('.fx-other-currency');
-        if (event.target.value === FX_OTHER) {
-          if (extraWrap) extraWrap.hidden = false;
-        } else {
-          if (extraWrap) extraWrap.hidden = true;
-          writeCurrency(form, event.target.value);
-        }
-        placeRate();
-        paint(form);
-      }
-      if (event.target.name === 'fx-other-currency') {
-        if (event.target.value) writeCurrency(form, event.target.value);
-        placeRate();
-        paint(form);
-      }
-      if (event.target.name === 'fx-pay-main' && payOtherWrap) payOtherWrap.hidden = event.target.value !== FX_OTHER;
       if (event.target.name === 'currency' || event.target.name === 'fx-currency' || event.target.name === 'payment-status') {
-        if (event.target.name === 'currency') reflectCurrency(form, event.target.value);
         placeRate();
         paint(form);
       }
@@ -430,18 +322,16 @@
     if (rateField) rateField.addEventListener('focus', function () {
       if (!num(block.dataset.priorRate)) block.dataset.rateFocus = String(num(rateField.value) || '');
     });
+    if (window.upgradeCurrencySelects) window.upgradeCurrencySelects(form);
     placeRate();
     paint(form);
     const previous = form.onsubmit;
     form.onsubmit = function (event) {
-      const chosen = selectedCode(form);
-      const mainPicker = form.querySelector('[name="fx-currency-main"]');
-      if (mainPicker && mainPicker.value === FX_OTHER && !chosen) {
+      if (currency && !window.currencyReady(currency)) {
         event.preventDefault();
         alert('Выберите валюту.');
         return;
       }
-      if (chosen) writeCurrency(form, chosen);
       const rateBefore = num(asset.currentRate);
       const sessionPrior = num(block.dataset.priorRate);
       const keptLegs = legs(asset).map(function (leg) { return Object.assign({}, leg, { payments: (leg.payments || []).slice() }); });

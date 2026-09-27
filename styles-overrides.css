@@ -210,7 +210,10 @@
 .fx-calc{grid-column:1/-1;margin:8px 0 4px;padding:12px;border:1px solid #2858a8;border-radius:12px;background:#0c2d68}
 .fx-calc[hidden]{display:none!important}
 select.fx-currency-store{display:none!important}
-.fx-other-currency[hidden],.fx-pay-other[hidden]{display:none!important}
+.fx-other-currency[hidden],.fx-pay-other[hidden],.fx-currency-add[hidden],.record-fx-rate[hidden],.record-fx-eq[hidden],.safe-rate-field[hidden]{display:none!important}
+.fx-currency-add{display:grid;grid-template-columns:minmax(70px,.5fr) 1fr auto;gap:8px;align-items:end;margin-top:8px}
+.fx-currency-add label{display:flex;flex-direction:column;gap:4px;color:#9db1d5;font-size:11px}
+.record-fx-eq{margin:0 0 8px;color:#dce8ff;font-size:13px}
 .fx-calc h4{margin:0 0 10px;color:#fff;font-size:15px}
 .fx-readout{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px}
 .fx-readout span,.fx-leg-preview span{display:block;color:#9db1d5;font-size:11px}

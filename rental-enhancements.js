@@ -1,7 +1,6 @@
 (function () {
   const assetTypes = ['Квартира', 'Дом', 'Территория или имущественный комплекс', 'Склад', 'Коммерческое помещение', 'Земельный участок', 'Автомобиль', 'Другое'];
   const usageStatuses = ['Личное использование', 'Используется в собственном бизнесе', 'Сдаётся в аренду', 'Планируется сдача в аренду', 'Не используется / свободно'];
-  const currencies = ['RUB', 'USD', 'EUR'];
   const periods = ['Месяц', 'Квартал', 'Год', 'Другой период'];
 
   function esc(value) {
@@ -76,7 +75,7 @@
     const photos = JSON.stringify(asset.photos || []).replace(/"/g, '&quot;');
     const usage = asset.usage || asset.usageStatus || 'Личное использование';
     return '<div class="asset-extension-fields">' +
-      '<div class="form-field purchase-only"><label>Валюта договора</label><select name="currency">' + optionList(currencies, asset.currency || 'RUB') + '</select></div>' +
+      '<div class="form-field purchase-only"><label>Валюта договора</label><select name="currency" data-currency-catalog="1"><option>' + esc(asset.currency || 'RUB') + '</option></select></div>' +
       '<div class="form-field fx-only"><label>Режим курса</label><select name="rateMode">' + optionList(['Ручной', 'Автоматический'], asset.rateMode || 'Ручной') + '</select></div>' +
       '<div class="form-field fx-only"><label>Курс при внесении</label><input name="initialRate" inputmode="decimal" value="' + (asset.initialRate || '') + '"></div>' +
       '<div class="form-field fx-only"><label>Текущий курс</label><input name="currentRate" inputmode="decimal" value="' + (asset.currentRate || '') + '"><button type="button" class="ghost-button rate-refresh">Обновить курс</button></div>' +
@@ -84,7 +83,7 @@
       '<div class="asset-photo-field"><label>Фотографии объекта</label><input id="asset-photos-input" type="file" accept="image/*" multiple><input name="photos" type="hidden" value="' + photos + '"><div class="asset-photo-list">' + (asset.photos || []).map(function (photo, index) { return '<div class="asset-photo-thumb"><img src="' + photo + '"><button type="button" data-photo-index="' + index + '">' + (index === 0 ? 'Главная' : 'Сделать главной') + '</button><button type="button" data-remove-photo="' + index + '">Удалить</button></div>'; }).join('') + '</div></div>' +
       '<div class="rental-fields"><div class="form-field rent-any"><label>Сумма аренды</label><input name="rentAmount" inputmode="decimal" value="' + (rent.amount || '') + '"></div>' +
       '<div class="form-field rent-any"><label>Дата начала дохода / очередного платежа</label><input name="rentNextDate" type="date" value="' + (rent.nextDate || rent.startDate || '') + '"></div>' +
-      '<div class="form-field rent-live"><label>Валюта аренды</label><select name="rentCurrency">' + optionList(currencies, rent.currency || asset.currency || 'RUB') + '</select></div>' +
+      '<div class="form-field rent-live"><label>Валюта аренды</label><select name="rentCurrency" data-currency-catalog="1"><option>' + esc(rent.currency || asset.currency || 'RUB') + '</option></select></div>' +
       '<div class="form-field rent-live"><label>Периодичность</label><select name="rentPeriodicity">' + optionList(periods, rent.periodicity || 'Месяц') + '</select></div>' +
       '<div class="form-field rent-live"><label>Арендатор</label><input name="tenant" value="' + (rent.tenant || '') + '"></div>' +
       '<div class="form-field rent-live"><label>Дата начала договора</label><input name="contractStart" type="date" value="' + (rent.contractStart || '') + '"></div>' +
@@ -322,14 +321,14 @@
     const tenant = part ? (part.tenant || '') : (rent.tenant || '');
     const phone = part ? (part.rentPhone || '') : (rent.phone || '');
     const comment = part ? (part.comment || '') : (rent.comment || '');
-    const currencyOptions = currencies.map(function (item) { return '<option ' + (item === currency ? 'selected' : '') + '>' + item + '</option>'; }).join('');
+    const currencyOptions = '<option selected>' + esc(currency || 'RUB') + '</option>';
     const periodOptions = periods.map(function (item) { return '<option ' + (item === period ? 'selected' : '') + '>' + item + '</option>'; }).join('');
     const field = function (label, html) { return '<div class="form-field"><label>' + label + '</label>' + html + '</div>'; };
     document.getElementById('modal-root').innerHTML = '<div class="modal-backdrop" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-header"><h2>Сдано в аренду</h2><button type="button" class="close" onclick="closeModal()">×</button></div><form id="rent-lease-form"><div class="modal-body"><div class="form-grid">' +
       field('ФИО или название арендатора', '<input name="tenant" value="' + esc(tenant) + '">') +
       field('Телефон или контакт', '<input name="phone" value="' + esc(phone) + '">') +
       field('Сумма аренды', '<input name="amount" inputmode="decimal" value="' + esc(amount || '') + '" required>') +
-      field('Валюта', '<select name="currency">' + currencyOptions + '</select>') +
+      field('Валюта', '<select name="currency" data-currency-catalog="1">' + currencyOptions + '</select>') +
       field('Дата начала аренды', '<input name="start" type="date" value="' + esc(start) + '">') +
       field('Дата окончания договора', '<input name="end" type="date" value="' + esc(end) + '">') +
       field('Периодичность платежа', '<select name="period">' + periodOptions + '</select>') +
