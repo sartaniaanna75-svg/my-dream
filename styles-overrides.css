@@ -107,5 +107,15 @@
 .compact-payment.compact-overdue strong,.compact-payment.compact-overdue .compact-status{color:#ff9b93!important}
 .compact-status{font-style:normal;font-size:12px;font-weight:800}
 .fully-paid-badge{display:inline-flex;margin-top:4px;padding:10px 12px;border:1px solid #2f8f78;background:#0e3d52;color:#55e0bd}
-@media(max-width:1180px){.obligation-summary{grid-template-columns:1fr 1fr}.obligation-cards{grid-template-columns:minmax(0,520px)}}
+.add-payment-below{display:inline-flex;margin-top:12px}
+.asset-fx-facts{grid-template-columns:repeat(3,minmax(0,1fr))}
+.asset-pay-lines{display:flex;flex-direction:column;gap:6px}
+.asset-pay-lines strong{color:#fff}
+.asset-pay-lines .plan-need{color:#ffd7a8;font-weight:800}
+.plan-rate-edit{display:flex;align-items:center;gap:8px;color:#d5e4ff;font-size:12px;font-weight:700}
+.plan-rate-edit input{width:120px;padding:7px 8px;border:1px solid #2b5aa8;border-radius:8px;background:#081e58;color:#fff}
+.plan-rate-edit em{font-style:normal;color:#ffd7a8}
+.payment-plan-field small{color:#ffd7a8;font-weight:600}
+.payment-plan label[hidden],.payment-plan-field[hidden],.form-field[hidden]{display:none!important}
+@media(max-width:1180px){.obligation-summary{grid-template-columns:1fr 1fr}.obligation-cards{grid-template-columns:minmax(0,520px)}.asset-fx-facts{grid-template-columns:1fr 1fr}}
 @media(max-width:720px){.obligation-summary{grid-template-columns:1fr}.obligation-summary-item strong{font-size:22px!important}.ob-metrics{grid-template-columns:1fr}}
