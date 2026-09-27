@@ -184,11 +184,44 @@
     return baseHistory() + '<div class="panel property-history"><h3>История имущества</h3><h4>Изменения статусов</h4>' + (statusRows || '<div class="empty">История статусов появится после изменений</div>') + '<h4>История курсов и переоценки</h4>' + (rateRows || '<div class="empty">История курсов появится для валютного имущества</div>') + '</div>';
   };
 
+  function dashboardDateKey(daysAhead) {
+    return isoDate(new Date(today.getFullYear(), today.getMonth(), today.getDate() + daysAhead));
+  }
+  function inCurrentMonth(date) {
+    return !!date && String(date).slice(0, 7) === isoDate(today).slice(0, 7);
+  }
+  function inNext30Days(date) {
+    if (!date) return false;
+    const todayKey = isoDate(today);
+    return date >= todayKey && date <= dashboardDateKey(30);
+  }
   function rentalSummary() {
-    const monthlyExpected = state.assets.reduce(function (sum, asset) { return sum + (asset.rent && asset.rent.planned ? num(asset.rent.amount) : 0); }, 0);
-    const monthlyReceived = state.assets.reduce(function (sum, asset) { return sum + (asset.rent ? asset.rent.payments.filter(function (payment) { return payment.status === 'Получено' && payment.receivedAt && payment.receivedAt.slice(0, 7) === isoDate(today).slice(0, 7); }).reduce(function (part, payment) { return part + num(payment.amount); }, 0) : 0); }, 0);
-    const depositIncome = state.deposits.reduce(function (sum, deposit) { return sum + num(deposit.received); }, 0);
-    return '<section class="rental-summary panel"><div class="dash-panel-heading"><div><p class="eyebrow">ДОХОД ОТ КАПИТАЛА</p><h3>Фактический и потенциальный доход</h3></div></div><div class="rental-summary-grid"><div><span>Проценты по вкладам</span><strong>' + rub(depositIncome) + '</strong></div><div><span>Аренда получена</span><strong class="teal">' + rub(monthlyReceived) + '</strong></div><div><span>Аренда ожидается</span><strong class="orange">' + rub(monthlyExpected) + '</strong></div><div><span>Потенциальный доход / месяц</span><strong>' + rub(monthlyExpected) + '</strong></div></div></section>';
+    let depositReceived = 0;
+    let rentReceived = 0;
+    let depositExpected = 0;
+    let rentExpected = 0;
+    state.deposits.forEach(function (deposit) {
+      if (inCurrentMonth(deposit.nextDate)) depositReceived += num(deposit.received);
+      if (deposit.status !== 'Получено' && inNext30Days(deposit.nextDate)) depositExpected += num(deposit.expected);
+    });
+    state.assets.forEach(function (asset) {
+      const rent = asset.rent || {};
+      const payments = rent.payments || [];
+      const plannedDate = rent.nextDate || rent.startDate || '';
+      let plannedDateCovered = false;
+      payments.forEach(function (payment) {
+        if (payment.date === plannedDate) plannedDateCovered = true;
+        if (payment.status === 'Получено') {
+          if (inCurrentMonth(payment.receivedAt || payment.date)) rentReceived += num(payment.amount);
+          return;
+        }
+        if (inNext30Days(payment.date)) rentExpected += num(payment.amount);
+      });
+      if (!plannedDateCovered && inNext30Days(plannedDate) && num(rent.amount)) rentExpected += num(rent.amount);
+    });
+    const receivedTotal = depositReceived + rentReceived;
+    const expectedTotal = depositExpected + rentExpected;
+    return '<section class="rental-summary panel"><div class="dash-panel-heading"><div><p class="eyebrow">ДОХОД ОТ КАПИТАЛА</p><h3>Текущие поступления</h3></div></div><div class="rental-summary-grid"><div><span>Доход получен в этом месяце</span><strong class="teal">' + rub(receivedTotal) + '</strong><small>Проценты по вкладам ' + rub(depositReceived) + ' · аренда ' + rub(rentReceived) + '</small></div><div><span>Ожидается в ближайшие 30 дней</span><strong class="orange">' + rub(expectedTotal) + '</strong><small>Вклады ' + rub(depositExpected) + ' · аренда ' + rub(rentExpected) + '</small></div></div></section>';
   }
   function refreshRentalSummary() { if (typeof activeView === 'undefined' || activeView !== 'dashboard') return; const view = document.getElementById('app-view'); if (!view || view.querySelector('.rental-summary')) return; const shell = view.querySelector('.dashboard-shell'); if (shell) shell.insertAdjacentHTML('afterbegin', rentalSummary()); }
   setTimeout(refreshRentalSummary, 0);
