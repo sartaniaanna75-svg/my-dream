@@ -1,6 +1,6 @@
 (function () {
-  const assetTypes = ['Квартира', 'Дом', 'Коммерческое помещение', 'Здание', 'Земля', 'Автомобиль', 'Другое'];
-  const usageStatuses = ['Оплачиваю', 'Использую в своём бизнесе', 'Планирую сдавать', 'Свободно / ищу арендатора', 'Сдаётся в аренду', 'Продано / выбыло'];
+  const assetTypes = ['Квартира', 'Дом', 'Территория или имущественный комплекс', 'Склад', 'Коммерческое помещение', 'Земельный участок', 'Автомобиль', 'Другое'];
+  const usageStatuses = ['Личное использование', 'Используется в собственном бизнесе', 'Сдаётся в аренду', 'Планируется сдача в аренду', 'Не используется / свободно'];
   const currencies = ['RUB', 'USD', 'EUR'];
   const periods = ['Месяц', 'Квартал', 'Год', 'Другой период'];
 
@@ -12,7 +12,12 @@
     if (!asset.rateMode) asset.rateMode = 'Ручной';
     if (asset.acquisition === undefined) asset.acquisition = asset.purchase || '';
     if (!asset.type) asset.type = asset.category || 'Другое';
-    if (!asset.usageStatus) asset.usageStatus = asset.status === 'В собственности' ? 'Свободно / ищу арендатора' : 'Оплачиваю';
+    if (!asset.usage && asset.usageStatus && usageStatuses.indexOf(asset.usageStatus) >= 0) asset.usage = asset.usageStatus;
+    if (!asset.usage) asset.usage = 'Личное использование';
+    asset.usageStatus = asset.usage;
+    if (!Array.isArray(asset.parts)) asset.parts = [];
+    if (!asset.valueCurrency) asset.valueCurrency = asset.currency || 'RUB';
+    if (!asset.ownershipStatus) asset.ownershipStatus = asset.status === 'Покупаю' ? 'Покупается' : 'В собственности';
     if (!Array.isArray(asset.statusHistory)) asset.statusHistory = [{ date: isoDate(today), value: asset.usageStatus }];
     if (!Array.isArray(asset.rateHistory)) asset.rateHistory = [];
     if (!asset.rent) asset.rent = { planned: false, periodicity: 'Месяц', currency: asset.currency || 'RUB', payments: [] };
@@ -25,7 +30,7 @@
 
   function ensureRentalPayments(asset) {
     const rent = asset.rent;
-    if (!rent || asset.usageStatus !== 'Сдаётся в аренду' || !num(rent.amount) || !rent.nextDate) return;
+    if (!rent || (asset.usage || asset.usageStatus) !== 'Сдаётся в аренду' || !num(rent.amount) || !rent.nextDate) return;
     const count = rent.periodicity === 'Год' ? 2 : rent.periodicity === 'Квартал' ? 5 : 13;
     const existing = new Set(rent.payments.map(function (payment) { return payment.date; }));
     let date = new Date(rent.nextDate + 'T12:00:00');
@@ -49,17 +54,39 @@
     try { photos = JSON.parse(get('photos') || '[]'); } catch (_) { photos = []; }
     return {
       type: get('type') || 'Другое', owner: get('owner') || '', currency: get('currency') || 'RUB', acquisition: get('acquisition') || get('purchase') || '', usageStatus: get('usageStatus') || 'Оплачиваю', initialRate: num(get('initialRate')), currentRate: num(get('currentRate')), rateMode: get('rateMode') || 'Ручной',
-      photos: photos, plannedRent: checked('plannedRent'), rent: {
+      photos: photos, plannedRent: get('usageStatus') === 'Сдаётся в аренду' || get('usageStatus') === 'Планируется сдача в аренду', rent: {
         planned: checked('plannedRent'), amount: num(get('rentAmount')), currency: get('rentCurrency') || get('currency') || 'RUB', periodicity: get('rentPeriodicity') || 'Месяц', startDate: get('rentStartDate') || '', comment: get('rentComment') || '',
         tenant: get('tenant') || '', nextDate: get('rentNextDate') || '', contractStart: get('contractStart') || '', contractEnd: get('contractEnd') || '', deposit: num(get('rentDeposit')), indexation: num(get('rentIndexation'))
       }
     };
   }
 
+  function optionList(items, current) {
+    return items.map(function (item) { return '<option ' + (item === current ? 'selected' : '') + '>' + item + '</option>'; }).join('');
+  }
+
   function rentFields(asset) {
     const rent = asset.rent || {};
     const photos = JSON.stringify(asset.photos || []).replace(/"/g, '&quot;');
-    return '<div class="asset-extension-fields"><div class="form-field"><label>Тип объекта</label><select name="type">' + assetTypes.map(function (type) { return '<option ' + (asset.type === type ? 'selected' : '') + '>' + type + '</option>'; }).join('') + '</select></div><div class="form-field"><label>Валюта покупки</label><select name="currency">' + currencies.map(function (currency) { return '<option ' + ((asset.currency || 'RUB') === currency ? 'selected' : '') + '>' + currency + '</option>'; }).join('') + '</select></div><div class="form-field"><label>Режим курса</label><select name="rateMode"><option ' + (asset.rateMode === 'Ручной' ? 'selected' : '') + '>Ручной</option><option ' + (asset.rateMode === 'Автоматический' ? 'selected' : '') + '>Автоматический</option></select></div><div class="form-field"><label>Курс при внесении</label><input name="initialRate" inputmode="decimal" value="' + (asset.initialRate || '') + '"></div><div class="form-field"><label>Текущий курс</label><input name="currentRate" inputmode="decimal" value="' + (asset.currentRate || '') + '"><button type="button" class="ghost-button rate-refresh">Обновить курс</button></div><div class="form-field"><label>Дата приобретения</label><input name="acquisition" type="date" value="' + (asset.acquisition || asset.purchase || '') + '"></div><div class="form-field"><label>Статус использования</label><select name="usageStatus">' + usageStatuses.map(function (status) { return '<option ' + (asset.usageStatus === status ? 'selected' : '') + '>' + status + '</option>'; }).join('') + '</select></div><div class="asset-photo-field"><label>📎 Фотографии объекта</label><input id="asset-photos-input" type="file" accept="image/*" multiple><input name="photos" type="hidden" value="' + photos + '"><div class="asset-photo-list">' + (asset.photos || []).map(function (photo, index) { return '<div class="asset-photo-thumb"><img src="' + photo + '"><button type="button" data-photo-index="' + index + '">' + (index === 0 ? 'Главная' : 'Сделать главной') + '</button><button type="button" data-remove-photo="' + index + '">Удалить</button></div>'; }).join('') + '</div></div><div class="rent-toggle"><label><input name="plannedRent" type="checkbox" ' + (asset.rent && asset.rent.planned ? 'checked' : '') + '> Планируется сдача в аренду</label></div><div class="rental-fields"><div class="form-field"><label>Планируемая / фактическая сумма аренды</label><input name="rentAmount" inputmode="decimal" value="' + (rent.amount || '') + '"></div><div class="form-field"><label>Валюта аренды</label><select name="rentCurrency">' + currencies.map(function (currency) { return '<option ' + ((rent.currency || asset.currency || 'RUB') === currency ? 'selected' : '') + '>' + currency + '</option>'; }).join('') + '</select></div><div class="form-field"><label>Периодичность</label><select name="rentPeriodicity">' + periods.map(function (period) { return '<option ' + ((rent.periodicity || 'Месяц') === period ? 'selected' : '') + '>' + period + '</option>'; }).join('') + '</select></div><div class="form-field"><label>Ориентировочная дата начала / очередного платежа</label><input name="rentNextDate" type="date" value="' + (rent.nextDate || rent.startDate || '') + '"></div><div class="form-field"><label>Комментарий по аренде</label><input name="rentComment" value="' + (rent.comment || '') + '"></div><div class="form-field"><label>Арендатор</label><input name="tenant" value="' + (rent.tenant || '') + '"></div><div class="form-field"><label>Дата начала договора</label><input name="contractStart" type="date" value="' + (rent.contractStart || '') + '"></div><div class="form-field"><label>Дата окончания договора</label><input name="contractEnd" type="date" value="' + (rent.contractEnd || '') + '"></div><div class="form-field"><label>Депозит</label><input name="rentDeposit" inputmode="decimal" value="' + (rent.deposit || '') + '"></div><div class="form-field"><label>Индексация аренды %</label><input name="rentIndexation" inputmode="decimal" value="' + (rent.indexation || '') + '"></div></div><input name="assetExtensionReady" type="hidden" value="1"></div>';
+    const usage = asset.usage || asset.usageStatus || 'Личное использование';
+    return '<div class="asset-extension-fields">' +
+      '<div class="form-field purchase-only"><label>Валюта договора</label><select name="currency">' + optionList(currencies, asset.currency || 'RUB') + '</select></div>' +
+      '<div class="form-field fx-only"><label>Режим курса</label><select name="rateMode">' + optionList(['Ручной', 'Автоматический'], asset.rateMode || 'Ручной') + '</select></div>' +
+      '<div class="form-field fx-only"><label>Курс при внесении</label><input name="initialRate" inputmode="decimal" value="' + (asset.initialRate || '') + '"></div>' +
+      '<div class="form-field fx-only"><label>Текущий курс</label><input name="currentRate" inputmode="decimal" value="' + (asset.currentRate || '') + '"><button type="button" class="ghost-button rate-refresh">Обновить курс</button></div>' +
+      '<div class="form-field usage-only"><label>Как используется объект?</label><select name="usageStatus">' + optionList(usageStatuses, usage) + '</select></div>' +
+      '<div class="asset-photo-field"><label>Фотографии объекта</label><input id="asset-photos-input" type="file" accept="image/*" multiple><input name="photos" type="hidden" value="' + photos + '"><div class="asset-photo-list">' + (asset.photos || []).map(function (photo, index) { return '<div class="asset-photo-thumb"><img src="' + photo + '"><button type="button" data-photo-index="' + index + '">' + (index === 0 ? 'Главная' : 'Сделать главной') + '</button><button type="button" data-remove-photo="' + index + '">Удалить</button></div>'; }).join('') + '</div></div>' +
+      '<div class="rental-fields"><div class="form-field rent-any"><label>Сумма аренды</label><input name="rentAmount" inputmode="decimal" value="' + (rent.amount || '') + '"></div>' +
+      '<div class="form-field rent-any"><label>Дата начала дохода / очередного платежа</label><input name="rentNextDate" type="date" value="' + (rent.nextDate || rent.startDate || '') + '"></div>' +
+      '<div class="form-field rent-live"><label>Валюта аренды</label><select name="rentCurrency">' + optionList(currencies, rent.currency || asset.currency || 'RUB') + '</select></div>' +
+      '<div class="form-field rent-live"><label>Периодичность</label><select name="rentPeriodicity">' + optionList(periods, rent.periodicity || 'Месяц') + '</select></div>' +
+      '<div class="form-field rent-live"><label>Арендатор</label><input name="tenant" value="' + (rent.tenant || '') + '"></div>' +
+      '<div class="form-field rent-live"><label>Дата начала договора</label><input name="contractStart" type="date" value="' + (rent.contractStart || '') + '"></div>' +
+      '<div class="form-field rent-live"><label>Дата окончания договора</label><input name="contractEnd" type="date" value="' + (rent.contractEnd || '') + '"></div>' +
+      '<div class="form-field rent-live"><label>Депозит</label><input name="rentDeposit" inputmode="decimal" value="' + (rent.deposit || '') + '"></div>' +
+      '<div class="form-field rent-live"><label>Индексация аренды %</label><input name="rentIndexation" inputmode="decimal" value="' + (rent.indexation || '') + '"></div>' +
+      '<div class="form-field rent-live"><label>Комментарий по аренде</label><input name="rentComment" value="' + (rent.comment || '') + '"></div></div>' +
+      '<input name="assetExtensionReady" type="hidden" value="1"></div>';
   }
 
   const originalOpenForm = window.openForm;
@@ -88,10 +115,13 @@
     });
     extras.addEventListener('click', function (event) { if (event.target.dataset.removePhoto !== undefined) { event.target.closest('.asset-photo-thumb').remove(); updatePhotos(); } if (event.target.dataset.photoIndex !== undefined) { const list = extras.querySelector('.asset-photo-list'); const selected = list.children[Number(event.target.dataset.photoIndex)]; if (selected) list.prepend(selected); updatePhotos(); } });
     extras.addEventListener('click', function (event) { const thumb = event.target.closest('.asset-photo-thumb'); if (!thumb) return; if (event.target.textContent.indexOf('Сделать главной') >= 0) { extras.querySelector('.asset-photo-list').prepend(thumb); updatePhotos(); } if (event.target.textContent === 'Удалить') { thumb.remove(); updatePhotos(); } });
-    extras.querySelector('.rate-refresh').addEventListener('click', function () { const value = prompt('Введите текущий курс вручную', extras.querySelector('[name="currentRate"]').value || ''); if (value !== null) extras.querySelector('[name="currentRate"]').value = value.replace(',', '.'); });
-    extras.querySelector('[name="plannedRent"]').addEventListener('change', function () { extras.classList.toggle('rent-active', this.checked || extras.querySelector('[name="usageStatus"]').value === 'Сдаётся в аренду'); });
-    extras.querySelector('[name="usageStatus"]').addEventListener('change', function () { extras.classList.toggle('rent-active', this.value === 'Сдаётся в аренду' || extras.querySelector('[name="plannedRent"]').checked); });
-    extras.querySelector('[name="usageStatus"]').dispatchEvent(new Event('change'));
+    const rateRefresh = extras.querySelector('.rate-refresh');
+    if (rateRefresh) rateRefresh.addEventListener('click', function () { const value = prompt('Введите текущий курс вручную', extras.querySelector('[name="currentRate"]').value || ''); if (value !== null) extras.querySelector('[name="currentRate"]').value = value.replace(',', '.'); });
+    const usageField = extras.querySelector('[name="usageStatus"]');
+    if (usageField) {
+      usageField.addEventListener('change', function () { const renting = this.value === 'Сдаётся в аренду' || this.value === 'Планируется сдача в аренду'; extras.classList.toggle('rent-active', renting); });
+      usageField.dispatchEvent(new Event('change'));
+    }
     const submit = form.onsubmit;
     form.onsubmit = function (event) {
       const existing = id ? state.assets.find(function (item) { return item.id === id; }) : null;
@@ -101,12 +131,12 @@
       const saved = state.assets.slice().reverse().find(function (item) { return item.name === name; });
       if (saved) {
         const extrasData = readAssetExtras(form);
-        saved.type = extrasData.type; saved.currency = extrasData.currency; saved.acquisition = extrasData.acquisition; saved.usageStatus = extrasData.usageStatus; saved.photos = extrasData.photos; saved.photo = saved.photos[0] || ''; saved.rateMode = extrasData.rateMode || 'Ручной'; saved.initialRate = extrasData.initialRate || saved.initialRate || 1; saved.currentRate = extrasData.currentRate || saved.currentRate || saved.initialRate;
+        if (extrasData.type) saved.type = extrasData.type; if (extrasData.currency) saved.currency = extrasData.currency; if (extrasData.acquisition) saved.acquisition = extrasData.acquisition; saved.usage = extrasData.usageStatus || saved.usage || 'Личное использование'; saved.usageStatus = saved.usage; saved.photos = extrasData.photos; saved.photo = saved.photos[0] || ''; saved.rateMode = extrasData.rateMode || 'Ручной'; saved.initialRate = extrasData.initialRate || saved.initialRate || 1; saved.currentRate = extrasData.currentRate || saved.currentRate || saved.initialRate;
         if (!Array.isArray(saved.rateHistory)) saved.rateHistory = [];
         if (!saved.rateHistory.length || saved.rateHistory[saved.rateHistory.length - 1].rate !== saved.currentRate) saved.rateHistory.push({ date: isoDate(today), rate: saved.currentRate, rubValue: num(saved.value) * saved.currentRate / (saved.initialRate || 1) });
         if (!Array.isArray(saved.statusHistory)) saved.statusHistory = [];
         if (!saved.statusHistory.length || saved.statusHistory[saved.statusHistory.length - 1].value !== saved.usageStatus) saved.statusHistory.push({ date: isoDate(today), value: saved.usageStatus });
-        saved.rent = Object.assign({}, existing && existing.rent ? existing.rent : {}, extrasData.rent, { planned: extrasData.plannedRent || saved.usageStatus === 'Сдаётся в аренду', payments: keptPayments });
+        saved.rent = Object.assign({}, existing && existing.rent ? existing.rent : {}, extrasData.rent, { planned: saved.usage === 'Планируется сдача в аренду' || saved.usage === 'Сдаётся в аренду', payments: keptPayments });
         ensureRentalPayments(saved); save(); render();
       }
       return result;
@@ -206,6 +236,8 @@
     });
     state.assets.forEach(function (asset) {
       const rent = asset.rent || {};
+      const usage = asset.usage || asset.usageStatus || '';
+      const renting = usage === 'Сдаётся в аренду' || usage === 'Планируется сдача в аренду';
       const payments = rent.payments || [];
       const plannedDate = rent.nextDate || rent.startDate || '';
       let plannedDateCovered = false;
@@ -215,15 +247,16 @@
           if (inCurrentMonth(payment.receivedAt || payment.date)) rentReceived += num(payment.amount);
           return;
         }
-        if (inNext30Days(payment.date)) rentExpected += num(payment.amount);
+        if (renting && inNext30Days(payment.date)) rentExpected += num(payment.amount);
       });
-      if (!plannedDateCovered && inNext30Days(plannedDate) && num(rent.amount)) rentExpected += num(rent.amount);
+      if (renting && !plannedDateCovered && inNext30Days(plannedDate) && num(rent.amount)) rentExpected += num(rent.amount);
     });
     const receivedTotal = depositReceived + rentReceived;
     const expectedTotal = depositExpected + rentExpected;
     return '<section class="rental-summary panel"><div class="dash-panel-heading"><div><p class="eyebrow">ДОХОД ОТ КАПИТАЛА</p><h3>Текущие поступления</h3></div></div><div class="rental-summary-grid"><div><span>Доход получен в этом месяце</span><strong class="teal">' + rub(receivedTotal) + '</strong><small>Проценты по вкладам ' + rub(depositReceived) + ' · аренда ' + rub(rentReceived) + '</small></div><div><span>Ожидается в ближайшие 30 дней</span><strong class="orange">' + rub(expectedTotal) + '</strong><small>Вклады ' + rub(depositExpected) + ' · аренда ' + rub(rentExpected) + '</small></div></div></section>';
   }
   function refreshRentalSummary() { if (typeof activeView === 'undefined' || activeView !== 'dashboard') return; const view = document.getElementById('app-view'); if (!view || view.querySelector('.rental-summary')) return; const shell = view.querySelector('.dashboard-shell'); if (shell) shell.insertAdjacentHTML('afterbegin', rentalSummary()); }
+  window.refreshRentalSummary = refreshRentalSummary;
   setTimeout(refreshRentalSummary, 0);
   document.getElementById('main-nav').addEventListener('click', function () { setTimeout(refreshRentalSummary, 0); });
   document.querySelector('.top-actions').addEventListener('click', function () { setTimeout(refreshRentalSummary, 0); });

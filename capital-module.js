@@ -29,6 +29,7 @@
       if (!safe.name) { safe.name = 'Сейф'; changed = true; }
       if (currencies.indexOf(safe.currency) < 0) { safe.currency = 'RUB'; changed = true; }
       if (safe.comment == null) { safe.comment = ''; changed = true; }
+      if (safe.coverObligations === undefined) { safe.coverObligations = true; changed = true; }
       if (!Array.isArray(safe.operations)) { safe.operations = []; changed = true; }
       safe.operations.forEach(function (op) {
         if (!op.id) { op.id = uid(); changed = true; }
@@ -49,15 +50,25 @@
     return 0;
   }
 
-  function assetAmountRub(asset, amount) {
-    const currency = (asset && asset.currency) || 'RUB';
+  function appraisalCurrency(asset) {
+    return (asset && asset.valueCurrency) || (asset && asset.currency) || 'RUB';
+  }
+  function amountInCurrencyRub(asset, amount, currency) {
+    const code = currency || 'RUB';
     const n = num(amount);
-    if (currency === 'RUB') return n;
-    const rate = liveRate(currency, asset);
+    if (!code || code === 'RUB') return n;
+    const rate = liveRate(code, asset);
     if (!rate) return n;
     return n * rate;
   }
+  function assetAmountRub(asset, amount) {
+    return amountInCurrencyRub(asset, amount, appraisalCurrency(asset));
+  }
+  function contractAmountRub(asset, amount) {
+    return amountInCurrencyRub(asset, amount, (asset && asset.currency) || 'RUB');
+  }
   window.assetAmountRub = assetAmountRub;
+  window.contractAmountRub = contractAmountRub;
 
   function toRub(amount, currency, asset) {
     if (!currency || currency === 'RUB') return num(amount);
@@ -129,7 +140,7 @@
   }
 
   function obligationRemainingRub(item) {
-    if (item && item.kind === 'asset' && item.asset && item.asset.currency && item.asset.currency !== 'RUB') return assetAmountRub(item.asset, item.remaining);
+    if (item && item.kind === 'asset' && item.asset) return contractAmountRub(item.asset, item.remaining);
     return num(item && item.remaining);
   }
   window.obligationRemainingRub = obligationRemainingRub;
@@ -264,6 +275,7 @@
       field('Название', '<input name="name" value="' + esc(safe.name) + '" required>') +
       field('Валюта', '<select name="currency"' + (locked ? ' disabled' : '') + '>' + options + '</select>') +
       field('Комментарий', '<input name="comment" value="' + esc(safe.comment || '') + '">') +
+      field('Учитывать для покрытия обязательств', '<select name="coverObligations"><option ' + (safe.coverObligations === false ? '' : 'selected') + '>Да</option><option ' + (safe.coverObligations === false ? 'selected' : '') + '>Нет</option></select>') +
       (id ? '' : field('Начальный остаток', '<input name="opening" inputmode="decimal" placeholder="0">')) +
       '<p class="safe-note">' + (locked ? 'Валюту нельзя сменить: в сейфе уже есть операции. Для другой валюты создайте отдельный сейф.' : 'Начальный остаток записывается как операция «Положить деньги».') + '</p>',
       'Сохранить',
@@ -271,12 +283,14 @@
         const name = form.elements.name.value.trim();
         if (!name) { alert('Укажите название сейфа.'); return; }
         const currency = locked ? safe.currency : form.elements.currency.value;
+        const cover = form.elements.coverObligations.value !== 'Нет';
         if (id) {
           safe.name = name;
           safe.comment = form.elements.comment.value.trim();
           safe.currency = currency;
+          safe.coverObligations = cover;
         } else {
-          const created = { id: uid(), name: name, currency: currency, comment: form.elements.comment.value.trim(), operations: [] };
+          const created = { id: uid(), name: name, currency: currency, comment: form.elements.comment.value.trim(), operations: [], coverObligations: cover };
           const opening = num(form.elements.opening && form.elements.opening.value);
           if (opening > 0) created.operations.push({ id: uid(), date: isoDate(today), amount: opening, currency: currency, direction: 'in', comment: 'Начальный остаток' });
           state.safes.push(created);
@@ -407,9 +421,10 @@
   }
 
   function assetIsForeign(asset) {
+    if (asset && asset.valueCurrency && asset.valueCurrency !== 'RUB') return true;
+    if (asset && asset.currency && asset.currency !== 'RUB') return true;
     if (asset && asset.calcType === 'Зарубежное имущество') return true;
-    if (asset && asset.calcType === 'Рубли') return false;
-    return !!(asset && asset.currency && asset.currency !== 'RUB');
+    return false;
   }
 
   function rateUnit(currency) {
@@ -459,11 +474,20 @@
     const typeLabel = esc(asset.type || asset.category || 'Имущество');
     const city = assetCity(asset);
     const meta = city ? typeLabel + ' · ' + esc(city) : typeLabel;
-    const buying = assetRemaining(asset) > 0;
-    const currentMain = foreign ? todayValue : rub(asset.value);
-    const currentSub = foreign ? moneyOriginal(asset.value, currency) : '';
+    const valueCode = appraisalCurrency(asset);
+    const purchaseOpen = asset.ownershipStatus === 'Покупается';
+    const showPayFacts = purchaseOpen && assetRemaining(asset) > 0;
+    const statusLabel = asset.ownershipStatus || (purchaseOpen ? 'Покупается' : 'В собственности');
+    const currentMain = valueCode === 'RUB' ? rub(asset.value) : (rubApprox(asset.value, valueCode, asset) === 'курс не задан' ? 'курс не задан' : rub(assetAmountRub(asset, asset.value)));
+    const currentSub = valueCode === 'RUB' ? '' : moneyOriginal(asset.value, valueCode);
     const remainMain = moneyOriginal(assetRemaining(asset), foreign ? currency : 'RUB');
     const remainSub = foreign ? prepareText : '';
+    const payFacts = showPayFacts ? '<div><span>Фактически вложено</span><strong>' + actualSpentText(asset) + '</strong></div><div><span>Осталось оплатить</span><strong>' + remainMain + '</strong>' + (remainSub ? '<small>' + remainSub + '</small>' : '') + '</div>' : '';
+    const statusClass = statusLabel === 'Покупается' ? 'tag-yellow' : statusLabel === 'Другое' ? 'tag-blue' : 'tag-green';
+    const detailMetrics = purchaseOpen ? metrics : '';
+    const partsView = (asset.parts || []).length ? '<div class="asset-parts-view"><h4>Помещения и части</h4>' + asset.parts.map(function (part) { return '<div class="part-line"><strong>' + esc(part.name || 'Помещение') + '</strong><span>' + esc([part.type, part.area ? part.area + ' м²' : '', part.usage, part.tenant ? 'арендатор ' + part.tenant : '', part.rentAmount ? 'аренда ' + rub(part.rentAmount) : '', part.rentStart ? 'с ' + dateText(part.rentStart) : ''].filter(Boolean).join(' · ')) + '</span></div>'; }).join('') + '<p class="asset-open-note">Стоимость территории учтена один раз. Помещения не увеличивают капитал повторно.</p></div>' : '';
+    const historyView = (asset.rateHistory || []).length ? '<div class="asset-parts-view"><h4>История стоимости</h4>' + asset.rateHistory.map(function (entry) { return '<div class="part-line"><strong>' + dateText(entry.date) + '</strong><span>' + (entry.rubValue != null ? rub(entry.rubValue) : '') + (entry.rate ? ' · курс ' + entry.rate : '') + '</span></div>'; }).join('') + '</div>' : '';
+    const payNote = purchaseOpen && assetPayments(asset).length ? '<p class="asset-open-note">График платежей хранится у объекта и контролируется в разделе «Обязательства», без второй копии долга.</p>' : '';
     const extras = [
       asset.owner ? ['Оформлено на', asset.owner] : null,
       (asset.acquisition || asset.purchase) ? ['Дата приобретения', dateText(asset.acquisition || asset.purchase)] : null,
@@ -472,7 +496,7 @@
       asset.comment ? ['Комментарий', asset.comment] : null
     ].filter(Boolean);
     const extraBlock = extras.length ? '<div class="asset-extra">' + extras.map(function (row) { return '<div><span>' + esc(row[0]) + '</span><strong>' + esc(row[1]) + '</strong></div>'; }).join('') + '</div>' : '';
-    return '<article class="asset-row panel"><div class="asset-row-main"><div class="asset-row-title"><strong>' + esc(asset.name) + '</strong><span>' + meta + '</span></div><div class="asset-row-facts"><div><span>Текущая стоимость</span><strong>' + currentMain + '</strong>' + (currentSub ? '<small>' + currentSub + '</small>' : '') + '</div><div><span>Фактически вложено</span><strong>' + actualSpentText(asset) + '</strong></div><div><span>Осталось оплатить</span><strong>' + remainMain + '</strong>' + (remainSub ? '<small>' + remainSub + '</small>' : '') + '</div></div><span class="tag asset-status ' + (buying ? 'tag-yellow' : 'tag-green') + '">' + (buying ? 'Покупается' : 'Оплачен') + '</span><button type="button" class="ghost-button asset-more" aria-expanded="false" onclick="toggleAssetDetails(\'' + asset.id + '\',this)">Подробнее</button></div><div class="asset-details" id="asset-details-' + asset.id + '" hidden><div class="asset-details-head"><p class="eyebrow">' + (foreign ? 'ЗАРУБЕЖНОЕ ИМУЩЕСТВО' : 'РУБЛИ') + '</p>' + actions('asset', asset.id) + '</div>' + metrics + valueBlock + revalueBlock + extraBlock + '<p class="asset-open-note">График платежей сохранён. Будущие платежи этого объекта показываются в разделе «Обязательства» и не дублируются отдельной записью.</p></div></article>';
+    return '<article class="asset-row panel"><div class="asset-row-main"><div class="asset-row-title"><strong>' + esc(asset.name) + '</strong><span>' + meta + '</span></div><div class="asset-row-facts"><div><span>Текущая стоимость</span><strong>' + currentMain + '</strong>' + (currentSub ? '<small>' + currentSub + '</small>' : '') + '</div>' + payFacts + '</div><span class="tag asset-status ' + statusClass + '">' + esc(statusLabel) + '</span><button type="button" class="ghost-button asset-more" aria-expanded="false" onclick="toggleAssetDetails(\'' + asset.id + '\',this)">Подробнее</button></div><div class="asset-details" id="asset-details-' + asset.id + '" hidden><div class="asset-details-head"><p class="eyebrow">' + (foreign ? 'ЗАРУБЕЖНОЕ ИМУЩЕСТВО' : 'РУБЛИ') + '</p>' + actions('asset', asset.id) + '</div>' + detailMetrics + valueBlock + (purchaseOpen ? revalueBlock : '') + extraBlock + partsView + historyView + payNote + '</div></article>';
   }
 
   window.toggleAssetDetails = function (id, button) {
@@ -524,11 +548,11 @@
     state.assets.forEach(function (asset) {
       const now = assetAmountRub(asset, asset.value);
       totalValue += now;
-      change += now - assetAmountRub(asset, asset.price);
+      if (num(asset.price) > 0) change += now - contractAmountRub(asset, asset.price);
       const spent = actualRubSpent(asset);
       invested += spent.total;
       if (!spent.known) investedKnown = false;
-      remaining += assetAmountRub(asset, assetRemaining(asset));
+      remaining += contractAmountRub(asset, assetRemaining(asset));
     });
     const changeClass = change > 0 ? 'positive' : change < 0 ? 'negative' : '';
     const summary = '<div class="asset-summary"><div><span>Общая стоимость имущества</span><strong>' + rub(totalValue) + '</strong></div><div><span>Фактически вложено</span><strong>' + rub(invested) + '</strong>' + (investedKnown ? '' : '<small>есть платежи без суммы в ₽</small>') + '</div><div><span>Осталось оплатить</span><strong>' + rub(remaining) + '</strong></div><div><span>Изменение стоимости</span><strong class="' + changeClass + '">' + signedRub(change) + '</strong></div></div>';
@@ -689,6 +713,14 @@
   }
 
   function applyCalcMode(form) {
+    if (form.querySelector('[name="ownershipStatus"]')) {
+      refreshFxPreview(form);
+      form.querySelectorAll('#payment-rows .payment-row').forEach(function (row) {
+        if (row.syncPaymentFields) row.syncPaymentFields();
+      });
+      if (typeof form.syncOwnershipForm === 'function') form.syncOwnershipForm();
+      return;
+    }
     const calc = form.querySelector('[name="calcType"]');
     const foreign = !!(calc && calc.value === 'Зарубежное имущество');
     const currency = form.querySelector('[name="currency"]');
@@ -776,8 +808,8 @@
       const assetName = form.elements.name ? form.elements.name.value : '';
       const paidRubRaw = form.elements.paidRub ? form.elements.paidRub.value : '';
       const calcTypeValue = form.elements.calcType ? form.elements.calcType.value : '';
-      if (calcTypeValue === 'Рубли' && form.elements.currency) form.elements.currency.value = 'RUB';
-      if (calcTypeValue === 'Зарубежное имущество' && form.elements.currency && form.elements.currency.value === 'RUB') form.elements.currency.value = 'USD';
+      if (!form.elements.ownershipStatus && calcTypeValue === 'Рубли' && form.elements.currency) form.elements.currency.value = 'RUB';
+      if (!form.elements.ownershipStatus && calcTypeValue === 'Зарубежное имущество' && form.elements.currency && form.elements.currency.value === 'RUB') form.elements.currency.value = 'USD';
       const currencyValue = form.elements.currency ? form.elements.currency.value : 'RUB';
       const extras = [...form.querySelectorAll('#payment-rows .payment-row')].filter(function (row) {
         const date = row.querySelector('[name="payment-date"]');
@@ -789,7 +821,25 @@
         ? state.assets.find(function (item) { return item.id === id; })
         : state.assets.slice().reverse().find(function (item) { return item.name === assetName; });
       if (!saved) return result;
-      if (calcTypeValue) saved.calcType = calcTypeValue;
+      const partBox = form.querySelector('#part-rows');
+      if (partBox) {
+        saved.parts = [...partBox.querySelectorAll('.part-row')].map(function (row) {
+          return {
+            id: row.querySelector('[name="part-id"]').value || uid(),
+            name: row.querySelector('[name="part-name"]').value.trim(),
+            type: row.querySelector('[name="part-type"]').value,
+            area: row.querySelector('[name="part-area"]').value.trim(),
+            usage: row.querySelector('[name="part-usage"]').value,
+            tenant: row.querySelector('[name="part-tenant"]').value.trim(),
+            rentAmount: num(row.querySelector('[name="part-rent"]').value),
+            rentStart: row.querySelector('[name="part-start"]').value,
+            comment: row.querySelector('[name="part-comment"]').value.trim()
+          };
+        }).filter(function (part) { return part.name; });
+      }
+      const valueCurrency = saved.valueCurrency || 'RUB';
+      const contractCurrency = saved.currency || 'RUB';
+      saved.calcType = valueCurrency !== 'RUB' || (saved.ownershipStatus === 'Покупается' && contractCurrency !== 'RUB') ? 'Зарубежное имущество' : (calcTypeValue || 'Рубли');
       if (currencyValue !== 'RUB') saved.paidRub = paidRubRaw.trim() === '' ? '' : num(paidRubRaw);
       (saved.payments || []).forEach(function (payment, index) {
         const extra = extras[index];
@@ -800,7 +850,7 @@
         payment.paidAmount = extra.paidAmount;
         payment.payRate = extra.payRate;
         payment.comment = extra.comment;
-        if (calcTypeValue === 'Зарубежное имущество') storePlanRate(payment, extra.planRate, saved);
+        if (saved.calcType === 'Зарубежное имущество') storePlanRate(payment, extra.planRate, saved);
         if (payment.status === 'Оплачено') {
           if (extra.rubActual !== '') payment.rubActual = extra.rubActual;
           else if (extra.payRate !== '' && num(extra.payRate) > 0) payment.rubActual = Math.round(settledCurrency(payment) * num(extra.payRate) * 100) / 100;
@@ -812,6 +862,64 @@
       render();
       return result;
     };
+    arrangeAssetForm(form, asset);
+  }
+
+  function partUsageOptions(current) {
+    return ['Личное использование', 'Используется в собственном бизнесе', 'Сдаётся в аренду', 'Планируется сдача в аренду', 'Не используется / свободно'].map(function (item) {
+      return '<option ' + ((current || 'Используется в собственном бизнесе') === item ? 'selected' : '') + '>' + item + '</option>';
+    }).join('');
+  }
+
+  function partTypeOptions(current) {
+    return ['Склад', 'Офис', 'Квартира', 'Дом', 'Коммерческое помещение', 'Земельный участок', 'Другое'].map(function (item) {
+      return '<option ' + ((current || 'Склад') === item ? 'selected' : '') + '>' + item + '</option>';
+    }).join('');
+  }
+
+  function partRowHtml(part) {
+    part = part || {};
+    return '<div class="part-row"><input name="part-id" type="hidden" value="' + esc(part.id || '') + '"><input name="part-name" placeholder="Название" value="' + esc(part.name || '') + '"><select name="part-type">' + partTypeOptions(part.type) + '</select><input name="part-area" inputmode="decimal" placeholder="Площадь, м²" value="' + esc(part.area || '') + '"><select name="part-usage">' + partUsageOptions(part.usage) + '</select><input name="part-tenant" placeholder="Арендатор" value="' + esc(part.tenant || '') + '"><input name="part-rent" inputmode="decimal" placeholder="Сумма аренды" value="' + esc(part.rentAmount || '') + '"><input name="part-start" type="date" value="' + esc(part.rentStart || '') + '"><input name="part-comment" placeholder="Комментарий" value="' + esc(part.comment || '') + '"><button type="button" class="ghost-button" onclick="this.parentElement.remove()">Удалить</button></div>';
+  }
+
+  window.addAssetPart = function (part) {
+    const box = document.getElementById('part-rows');
+    if (!box) return;
+    box.insertAdjacentHTML('beforeend', partRowHtml(part));
+  };
+
+  function arrangeAssetForm(form, asset) {
+    const section = form.querySelector('.payment-section');
+    if (section) section.classList.add('purchase-only');
+    if (!form.querySelector('.asset-parts')) {
+      const host = form.querySelector('.form-grid') || form.querySelector('.modal-body');
+      if (host) host.insertAdjacentHTML('beforeend', '<div class="asset-parts"><div class="payment-section-head"><strong>Помещения и части объекта</strong><button type="button" class="ghost-button" onclick="addAssetPart()">+ Добавить помещение / часть объекта</button></div><div id="part-rows"></div><p class="asset-open-note">Стоимость всей территории считается один раз. Помещения не создают второй объект в капитале.</p></div>');
+      (asset.parts || []).forEach(function (part) { window.addAssetPart(part); });
+    }
+    function sync() {
+      const buying = !!(form.elements.ownershipStatus && form.elements.ownershipStatus.value === 'Покупается');
+      const usage = form.elements.usageStatus ? form.elements.usageStatus.value : '';
+      const type = form.elements.type ? form.elements.type.value : '';
+      const valueCurrency = form.elements.valueCurrency ? form.elements.valueCurrency.value : 'RUB';
+      const contractCurrency = form.elements.currency ? form.elements.currency.value : 'RUB';
+      form.querySelectorAll('.purchase-only').forEach(function (node) { node.hidden = !buying; });
+      form.querySelectorAll('.usage-only').forEach(function (node) { node.hidden = buying; });
+      const showRent = !buying && (usage === 'Сдаётся в аренду' || usage === 'Планируется сдача в аренду');
+      form.querySelectorAll('.rent-any').forEach(function (node) { node.hidden = !showRent; });
+      form.querySelectorAll('.rent-live').forEach(function (node) { node.hidden = usage !== 'Сдаётся в аренду'; });
+      const foreign = valueCurrency !== 'RUB' || (buying && contractCurrency !== 'RUB');
+      form.querySelectorAll('.fx-only').forEach(function (node) { node.hidden = !foreign; });
+      const parts = form.querySelector('.asset-parts');
+      if (parts) parts.hidden = type !== 'Территория или имущественный комплекс';
+      const extras = form.querySelector('.asset-extension-fields');
+      if (extras) extras.classList.toggle('rent-active', showRent);
+    }
+    form.syncOwnershipForm = sync;
+    ['ownershipStatus', 'usageStatus', 'type', 'valueCurrency', 'currency'].forEach(function (name) {
+      const field = form.elements[name];
+      if (field) field.addEventListener('change', sync);
+    });
+    sync();
   }
 
   window.openPaymentFact = function (assetId, paymentId) {
@@ -907,11 +1015,43 @@
       return;
     }
     baseRender();
+    if (activeView === 'dashboard' && typeof applyReferenceDashboard === 'function') {
+      applyReferenceDashboard();
+      if (typeof refreshRentalSummary === 'function') refreshRentalSummary();
+    }
   };
+
+  function usableForObligations(item) {
+    return !item || item.coverObligations !== false;
+  }
+  function financialCoverage() {
+    ensureCapitalState();
+    const accounts = state.accounts.filter(usableForObligations).reduce(function (sum, item) { return sum + num(item.balance); }, 0);
+    const deposits = state.deposits.filter(usableForObligations).reduce(function (sum, item) { return sum + num(item.current); }, 0);
+    let safe = 0;
+    (state.safes || []).forEach(function (item) {
+      if (!usableForObligations(item)) return;
+      const rubles = toRub(safeBalance(item), item.currency);
+      if (rubles != null) safe += rubles;
+    });
+    const reserve = accounts + deposits + safe;
+    const due = obligations().reduce(function (sum, item) { return sum + obligationRemainingRub(item); }, 0);
+    const need = Math.max(0, due - reserve);
+    const extra = Math.max(0, reserve - due);
+    const pct = due > 0 ? Math.max(0, Math.min(100, Math.round(reserve / due * 100))) : 100;
+    return { accounts: accounts, deposits: deposits, safe: safe, reserve: reserve, due: due, need: need, extra: extra, pct: pct };
+  }
+  window.financialCoverage = financialCoverage;
+
+  function coverageSection() {
+    const data = financialCoverage();
+    const extra = data.need === 0 && data.extra > 0 ? '<p class="coverage-surplus">Резерв сверх обязательств: ' + rub(data.extra) + '</p>' : '';
+    return '<section class="dash-goal panel coverage-goal"><div class="dash-panel-heading"><div><p class="eyebrow">ДЕНЬГИ НА ОБЯЗАТЕЛЬСТВА</p><h3>Финансовая обеспеченность</h3><span>Только карты, вклады и сейф, которые вы разрешили использовать. Стоимость недвижимости, автомобиля и другого имущества сюда не входит.</span></div><span class="dash-percent">' + data.pct + '%</span></div><div class="dash-progress"><i style="width:' + data.pct + '%"></i></div><div class="coverage-facts"><div><small>Обязательства к оплате</small><b>' + rub(data.due) + '</b></div><div><small>Финансовый резерв</small><b>' + rub(data.reserve) + '</b></div><div><small>Ещё необходимо обеспечить</small><b class="' + (data.need ? 'orange' : 'teal') + '">' + rub(data.need) + '</b></div></div>' + extra + '<div class="coverage-split"><span>Вклады <b>' + rub(data.deposits) + '</b></span><span>Карты и счета <b>' + rub(data.accounts) + '</b></span><span>Сейф <b>' + rub(data.safe) + '</b></span></div></section>';
+  }
 
   const baseDashboard = referenceDashboard;
   referenceDashboard = function () {
-    const html = baseDashboard();
+    let html = baseDashboard().replace(/<section class="dash-goal panel">[\s\S]*?<\/section>/, coverageSection());
     if (!state.safes || !state.safes.length) return html;
     const line = totalsLine();
     const strip = '<section class="panel safe-dash"><div><p class="eyebrow">СЕЙФ</p><h3>В сейфе: ' + line.parts + '</h3><span>По текущему курсу: <b>' + line.rubText + '</b></span></div><button class="ghost-button" type="button" onclick="setView(\'safe\')">Открыть сейф →</button></section>';
@@ -919,6 +1059,10 @@
   };
 
   ensureCapitalState();
+  if (activeView === 'dashboard' && typeof applyReferenceDashboard === 'function') {
+    applyReferenceDashboard();
+    if (typeof refreshRentalSummary === 'function') refreshRentalSummary();
+  }
   if (state.fx.mode === 'Автоматический' && state.fx.updated !== isoDate(today)) {
     setTimeout(function () { refreshOfficialRates(true); }, 500);
   }

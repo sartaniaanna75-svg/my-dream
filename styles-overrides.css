@@ -171,3 +171,20 @@
 .asset-open-note{margin:12px 0 0;color:#a9bde2;font-size:12px}
 @media(max-width:1100px){.asset-summary{grid-template-columns:1fr 1fr}.asset-row-main{grid-template-columns:1fr auto auto}.asset-row-facts{grid-column:1/-1}}
 @media(max-width:720px){.asset-summary,.asset-row-facts,.asset-extra{grid-template-columns:1fr 1fr}.asset-row-main{grid-template-columns:1fr}.asset-status,.asset-more{justify-self:start}}
+.purchase-only[hidden],.usage-only[hidden],.rent-any[hidden],.rent-live[hidden],.fx-only[hidden],.asset-parts[hidden],.form-field[hidden],.payment-section[hidden]{display:none!important}
+.asset-parts{grid-column:1/-1;margin-top:12px;padding:12px;border:1px dashed #ff9e3d88;border-radius:12px;background:#12315f}
+.part-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
+.part-row input,.part-row select{width:140px;padding:8px;border:1px solid #2b5aa8;border-radius:8px;background:#081e58;color:#fff}
+.asset-parts-view{margin-top:12px}
+.asset-parts-view h4{margin:0 0 8px;color:#a9bde2;font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+.part-line{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid #1d4380}
+.part-line strong{color:#fff}
+.part-line span{color:#c5d6f2;font-size:12px;text-align:right}
+.coverage-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px}
+.coverage-facts div{padding:10px 12px;border-radius:10px;background:#10347a;border:1px solid #1e4b97}
+.coverage-facts small{display:block;color:#a9bde2;font-size:11px;font-weight:700}
+.coverage-facts b{display:block;margin-top:6px;color:#fff;font:800 18px Manrope}
+.coverage-split{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:12px;color:#c5d6f2;font-size:13px}
+.coverage-split b{color:#fff}
+.coverage-surplus{margin:10px 0 0;color:#55e0bd;font-weight:800}
+@media(max-width:720px){.coverage-facts{grid-template-columns:1fr}}

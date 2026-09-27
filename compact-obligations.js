@@ -63,7 +63,7 @@ function compactObligationCard(item) {
   const future = upcoming.length ? '<div class="payment-group"><h4>Предстоящие</h4>' + upcoming.map(payment).join('') + '</div>' : '';
   const nextOverdue = next && displayStatus(next) === 'Просрочено';
   const nextBlock = next
-    ? '<div class="nearest-payment' + (nextOverdue ? ' is-overdue' : '') + '"><div><small>Ближайший платёж · ' + item.what + '</small><strong>' + showMoney(next.amount) + '</strong><span>' + obligationDateWithYear(next.date) + '</span></div><button class="primary-button compact-paid-button" onclick="markObligationPayment(\'' + item.kind + '\',\'' + ownerId + '\',\'' + next.id + '\')">Оплачено</button></div>'
+    ? '<div class="nearest-payment' + (nextOverdue ? ' is-overdue' : '') + '"><div><small>' + item.what + '</small><strong>' + showMoney(next.amount) + '</strong><span>' + obligationDateWithYear(next.date) + ' · ' + ((next.currency) || (item.asset && item.asset.currency) || 'RUB') + ' · ' + displayStatus(next) + '</span></div><button class="primary-button compact-paid-button" onclick="markObligationPayment(\'' + item.kind + '\',\'' + ownerId + '\',\'' + next.id + '\')">Оплачено</button></div>'
     : (item.remaining <= 0 ? '<div class="fully-paid-badge">✓ Полностью оплачено</div>' : '<div class="no-payment-schedule">Будущие платежи не добавлены</div>');
   return '<article class="obligation-card compact-obligation-card"><div class="obligation-card-head"><div><h3>' + item.what + '</h3><span>' + (item.who || '') + '</span></div><span class="tag tag-blue">' + (item.kind === 'asset' ? 'Из имущества' : 'Вручную') + '</span></div><div class="ob-metrics"><div><span>Стоимость</span><strong>' + showMoney(item.total) + '</strong></div><div><span>Оплачено</span><strong>' + showMoney(item.paid) + '</strong></div><div><span>Осталось</span><strong class="danger">' + showMoney(item.remaining) + '</strong></div></div>' + fxNote + nextBlock + '<button class="all-payments-toggle" type="button" onclick="toggleObligationPayments(\'' + item.id + '\',this)">Все платежи (' + all.length + ') ↓</button><div class="all-obligation-payments" id="obligation-payments-' + item.id + '" data-count="' + all.length + '">' + future + history + '</div></article>';
 }
@@ -85,10 +85,10 @@ function compactDebtsView() {
   const activeAssetIds = {};
   active.forEach(function (item) { if (item.kind === 'asset' && item.asset) activeAssetIds[item.asset.id] = true; });
   const completed = state.assets.filter(function (asset) { return assetRemaining(asset) <= 0 && !activeAssetIds[asset.id]; }).map(function (asset) { return { kind: 'asset', id: asset.id, asset: asset, what: asset.name, who: asset.owner || asset.description, total: num(asset.price), paid: assetPaid(asset), remaining: 0, allPayments: assetPayments(asset) }; });
-  const snapshot = totals();
-  const available = num(snapshot.cash) + num(snapshot.safe);
-  const total = active.reduce(function (sum, item) { return sum + (typeof obligationRemainingRub === 'function' ? obligationRemainingRub(item) : item.remaining); }, 0);
-  const need = Math.max(0, total - available);
+  const cover = typeof financialCoverage === 'function' ? financialCoverage() : null;
+  const available = cover ? cover.reserve : num(totals().cash) + num(totals().safe);
+  const total = cover ? cover.due : active.reduce(function (sum, item) { return sum + (typeof obligationRemainingRub === 'function' ? obligationRemainingRub(item) : item.remaining); }, 0);
+  const need = cover ? cover.need : Math.max(0, total - available);
   const nearest = nearestObligationPayment(active);
   const nearestMoney = nearest ? (function () {
     const currency = nearest.item.asset && nearest.item.asset.currency;
@@ -96,7 +96,7 @@ function compactDebtsView() {
     return rub(nearest.payment.amount);
   })() : '—';
   const summary = '<div class="obligation-summary">' +
-    '<div class="obligation-summary-item"><span>Доступно сейчас</span><strong>' + rub(available) + '</strong><small>карты + счета + сейф</small></div>' +
+    '<div class="obligation-summary-item"><span>Финансовый резерв</span><strong>' + rub(available) + '</strong><small>только деньги с разрешением на оплату</small></div>' +
     '<div class="obligation-summary-item"><span>Все обязательства</span><strong>' + rub(total) + '</strong><small>осталось оплатить</small></div>' +
     '<div class="obligation-summary-item summary-next"><span>Ближайший платёж</span><strong>' + nearestMoney + '</strong>' + (nearest ? '<small>' + dateText(nearest.payment.date) + '</small><b class="summary-object">' + nearest.item.what + '</b>' : '<small>платежей нет</small>') + '</div>' +
     '<div class="obligation-summary-item ' + (need ? 'summary-danger' : 'summary-good') + '"><span>Нужно обеспечить</span><strong>' + rub(need) + '</strong><small>' + (need ? 'не хватает для покрытия обязательств' : 'денег достаточно') + '</small></div>' +
