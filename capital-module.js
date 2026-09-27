@@ -533,6 +533,93 @@
     if (n < 0) return '−' + text;
     return text;
   }
+  window.signedRub = signedRub;
+
+  function appraisalBaseRate(asset, code) {
+    if (!code || code === 'RUB') return 1;
+    if (asset && asset.appraisalBaseCurrency === code && num(asset.appraisalBaseRate) > 0) return num(asset.appraisalBaseRate);
+    if (asset && code === (asset.currency || 'RUB') && num(asset.initialRate) > 0) return num(asset.initialRate);
+    return liveRate(code, asset) || 0;
+  }
+
+  function assetValueShift(asset) {
+    const code = appraisalCurrency(asset);
+    const current = num(asset.value);
+    const sameCurrency = !asset.appraisalBaseCurrency || asset.appraisalBaseCurrency === code;
+    const hasBase = sameCurrency && asset.appraisalBase != null && asset.appraisalBase !== '';
+    const baseAmount = hasBase ? num(asset.appraisalBase) : current;
+    const baseRate = appraisalBaseRate(asset, code);
+    const todayRate = code === 'RUB' ? 1 : (liveRate(code, asset) || 0);
+    const objectRub = baseRate > 0 ? roundMoney((current - baseAmount) * baseRate) : 0;
+    const fxRub = code !== 'RUB' && baseRate > 0 && todayRate > 0 ? roundMoney(current * (todayRate - baseRate)) : 0;
+    return {
+      asset: asset,
+      code: code,
+      current: current,
+      baseAmount: baseAmount,
+      baseRate: baseRate,
+      todayRate: todayRate,
+      objectRub: objectRub,
+      fxRub: fxRub,
+      foreign: code !== 'RUB'
+    };
+  }
+
+  function appraisalMoney(amount, code, rate) {
+    if (!code || code === 'RUB') return rub(amount);
+    const original = moneyOriginal(amount, code);
+    if (!(rate > 0)) return original;
+    return original + ' · ' + rub(roundMoney(num(amount) * rate));
+  }
+
+  function rememberAppraisalChange(asset, oldAmount, oldCode) {
+    const nextAmount = num(asset.value);
+    const nextCode = appraisalCurrency(asset);
+    if (oldCode && oldCode !== nextCode) {
+      asset.appraisalBase = nextAmount;
+      asset.appraisalBaseCurrency = nextCode;
+      asset.appraisalBaseRate = nextCode === 'RUB' ? 1 : (liveRate(nextCode, asset) || 0);
+      return;
+    }
+    if (Math.abs(nextAmount - num(oldAmount)) < 0.009) return;
+    if (asset.appraisalBase == null || asset.appraisalBase === '' || asset.appraisalBaseCurrency !== nextCode) {
+      asset.appraisalBase = num(oldAmount);
+      asset.appraisalBaseCurrency = nextCode;
+      asset.appraisalBaseRate = nextCode === 'RUB' ? 1 : appraisalBaseRate(asset, nextCode);
+    }
+    const rate = nextCode === 'RUB' ? 1 : (num(asset.appraisalBaseRate) > 0 ? num(asset.appraisalBaseRate) : 0);
+    const fromRub = rate > 0 ? roundMoney(num(oldAmount) * rate) : 0;
+    const toRub = rate > 0 ? roundMoney(nextAmount * rate) : 0;
+    if (!Array.isArray(asset.appraisalHistory)) asset.appraisalHistory = [];
+    asset.appraisalHistory.push({
+      date: isoDate(today),
+      fromAmount: num(oldAmount),
+      toAmount: nextAmount,
+      currency: nextCode,
+      fromRub: fromRub,
+      toRub: toRub,
+      deltaRub: roundMoney(toRub - fromRub)
+    });
+  }
+
+  window.openAssetValueChange = function () {
+    const rows = (state.assets || []).map(assetValueShift);
+    let objectTotal = 0;
+    let fxTotal = 0;
+    let anyForeign = false;
+    const body = rows.map(function (row) {
+      objectTotal += row.objectRub;
+      fxTotal += row.fxRub;
+      if (row.foreign) anyForeign = true;
+      const name = row.asset.name || row.asset.type || 'Объект';
+      const lines = row.foreign
+        ? '<div><span>Валюта объекта</span><strong>' + esc(row.code) + '</strong></div><div><span>Базовая оценка</span><strong>' + appraisalMoney(row.baseAmount, row.code, row.baseRate) + '</strong></div><div><span>Текущая оценка</span><strong>' + appraisalMoney(row.current, row.code, row.todayRate) + '</strong></div><div><span>Изменение стоимости объекта</span><strong>' + signedRub(row.objectRub) + '</strong></div><div><span>Валютный эффект</span><strong>' + signedRub(row.fxRub) + '</strong></div>'
+        : '<div><span>Базовая оценка</span><strong>' + rub(row.baseAmount) + '</strong></div><div><span>Текущая оценка</span><strong>' + rub(row.current) + '</strong></div><div><span>Изменение</span><strong>' + signedRub(row.objectRub) + '</strong></div>';
+      return '<article class="asset-shift-row"><h3>' + esc(name) + '</h3><div class="asset-shift-facts">' + lines + '</div></article>';
+    }).join('');
+    const totals = '<div class="asset-shift-total"><div><span>Итого изменение стоимости объектов</span><strong>' + signedRub(roundMoney(objectTotal)) + '</strong></div>' + (anyForeign ? '<div><span>Итого валютный эффект</span><strong>' + signedRub(roundMoney(fxTotal)) + '</strong></div>' : '') + '</div>';
+    document.getElementById('modal-root').innerHTML = '<div class="modal-backdrop" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-header"><h2>Изменение стоимости имущества</h2><button type="button" class="close" onclick="closeModal()">×</button></div><div class="modal-body">' + (body || '<div class="empty">Объектов пока нет</div>') + totals + '<p class="asset-open-note">Здесь только оценка имущества. Стоимость по договору, оплата и остаток долга в этот показатель не входят.</p></div></div></div>';
+  };
 
   function assetCard(asset) {
     const currency = asset.currency || 'RUB';
@@ -765,18 +852,26 @@
     let invested = 0;
     let investedKnown = true;
     let remaining = 0;
-    let change = 0;
+    let objectChange = 0;
+    let fxChange = 0;
+    let anyForeignValue = false;
     state.assets.forEach(function (asset) {
       const now = assetAmountRub(asset, asset.value);
       totalValue += now;
-      if (num(asset.price) > 0) change += now - contractAmountRub(asset, asset.price);
+      const shift = assetValueShift(asset);
+      objectChange += shift.objectRub;
+      fxChange += shift.fxRub;
+      if (shift.foreign) anyForeignValue = true;
       const spent = actualRubSpent(asset);
       invested += spent.total;
       if (!spent.known) investedKnown = false;
       remaining += typeof window.fxObligationRub === 'function' ? window.fxObligationRub(asset) : contractAmountRub(asset, assetRemaining(asset));
     });
-    const changeClass = change > 0 ? 'positive' : change < 0 ? 'negative' : '';
-    const summary = '<div class="asset-summary"><div><span>Общая стоимость имущества</span><strong>' + rub(totalValue) + '</strong></div><div><span>Фактически вложено</span><strong>' + rub(invested) + '</strong>' + (investedKnown ? '' : '<small>есть платежи без суммы в ₽</small>') + '</div><div><span>Осталось оплатить</span><strong>' + rub(remaining) + '</strong></div><div><span>Изменение стоимости</span><strong class="' + changeClass + '">' + signedRub(change) + '</strong></div></div>';
+    objectChange = roundMoney(objectChange);
+    fxChange = roundMoney(fxChange);
+    const changeClass = objectChange > 0 ? 'positive' : objectChange < 0 ? 'negative' : '';
+    const fxLine = anyForeignValue ? '<small>Валютный эффект: ' + signedRub(fxChange) + '</small>' : '';
+    const summary = '<div class="asset-summary"><div><span>Общая стоимость имущества</span><strong>' + rub(totalValue) + '</strong></div><div><span>Фактически вложено</span><strong>' + rub(invested) + '</strong>' + (investedKnown ? '' : '<small>есть платежи без суммы в ₽</small>') + '</div><div><span>Осталось оплатить</span><strong>' + rub(remaining) + '</strong></div><button type="button" class="asset-change" onclick="openAssetValueChange()"><span>Изменение стоимости имущества</span><strong class="' + changeClass + '">' + signedRub(objectChange) + '</strong><small>Изменение оценки объектов: ' + signedRub(objectChange) + '</small>' + fxLine + '</button></div>';
     const cards = state.assets.map(assetCard).join('');
     return '<div class="view-wrap"><div class="section-heading"><div><p class="eyebrow">УПРАВЛЕНИЕ ДАННЫМИ</p><h2>Имущество</h2><p>Сумма договора хранится в валюте покупки и не меняется из-за курса. Платежи по покупке — в «Обязательствах».</p></div><button class="primary-button" type="button" onclick="openForm(\'asset\')">＋ Добавить объект</button></div>' + summary + '<div class="asset-list">' + (cards || '<div class="panel empty">Объектов пока нет.</div>') + '</div></div>';
   };
@@ -1035,11 +1130,20 @@
         const amount = row.querySelector('[name="payment-amount"]');
         return date && date.value && num(amount && amount.value) > 0;
       }).map(readPaymentExtras);
+      const beforeAsset = id ? state.assets.find(function (item) { return item.id === id; }) : null;
+      const oldAppraisal = beforeAsset ? num(beforeAsset.value) : null;
+      const oldAppraisalCode = beforeAsset ? appraisalCurrency(beforeAsset) : '';
       const result = previous ? previous.call(this, event) : undefined;
       const saved = id
         ? state.assets.find(function (item) { return item.id === id; })
         : state.assets.slice().reverse().find(function (item) { return item.name === assetName; });
       if (!saved) return result;
+      if (beforeAsset) rememberAppraisalChange(saved, oldAppraisal, oldAppraisalCode);
+      else if (saved.appraisalBase == null || saved.appraisalBase === '') {
+        saved.appraisalBase = num(saved.value);
+        saved.appraisalBaseCurrency = appraisalCurrency(saved);
+        saved.appraisalBaseRate = appraisalBaseRate(saved, appraisalCurrency(saved));
+      }
       const partBox = form.querySelector('#part-rows');
       if (partBox) {
         const previousParts = Array.isArray(saved.parts) ? saved.parts : [];

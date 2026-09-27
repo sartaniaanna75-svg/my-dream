@@ -515,7 +515,13 @@
   history = function () {
     const statusRows = state.assets.flatMap(function (asset) { return (asset.statusHistory || []).map(function (entry) { return '<div class="stat-row"><span>' + dateText(entry.date) + ' · ' + asset.name + '</span><strong>' + entry.value + '</strong></div>'; }); }).join('');
     const rateRows = state.assets.flatMap(function (asset) { return (asset.rateHistory || []).map(function (entry) { return '<div class="stat-row"><span>' + dateText(entry.date) + ' · ' + asset.name + '</span><strong>' + entry.rate + '</strong></div>'; }).join(''); }).join('');
-    return baseHistory() + '<div class="panel property-history"><h3>История имущества</h3><h4>Изменения статусов</h4>' + (statusRows || '<div class="empty">История статусов появится после изменений</div>') + '<h4>История курсов и переоценки</h4>' + (rateRows || '<div class="empty">История курсов появится для валютного имущества</div>') + '</div>';
+    const appraisalRows = state.assets.reduce(function (html, asset) {
+      return html + (asset.appraisalHistory || []).map(function (entry) {
+        const delta = typeof window.signedRub === 'function' ? window.signedRub(entry.deltaRub) : rub(entry.deltaRub);
+        return '<div class="stat-row"><span>' + dateText(entry.date) + ' · ' + asset.name + '<small class="appraisal-note">Оценка изменена: ' + rub(entry.fromRub) + ' → ' + rub(entry.toRub) + '</small></span><strong>' + delta + '</strong></div>';
+      }).join('');
+    }, '');
+    return baseHistory() + '<div class="panel property-history"><h3>История имущества</h3><h4>Изменения статусов</h4>' + (statusRows || '<div class="empty">История статусов появится после изменений</div>') + '<h4>Изменения оценки</h4>' + (appraisalRows || '<div class="empty">История оценки появится после изменения текущей стоимости объекта</div>') + '<h4>История курсов и переоценки</h4>' + (rateRows || '<div class="empty">История курсов появится для валютного имущества</div>') + '</div>';
   };
 
   const baseExpectedThisMonth = expectedThisMonth;
