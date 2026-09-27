@@ -244,7 +244,32 @@
 .rent-block-head span{min-width:22px;height:22px;padding:0 6px;border-radius:11px;background:#163a86;color:#dce8ff;font-size:12px;font-weight:800;display:grid;place-items:center}
 .rent-block>p{margin:4px 0 8px;color:#9db1d5;font-size:12px}
 .rent-empty{padding:10px 12px;border-radius:10px;background:#0c2d68;color:#9db1d5}
-.rent-row{display:flex;align-items:center;gap:12px;padding:10px 12px;margin-top:8px}
+.rent-board{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:0 0 8px}
+.rent-board article{padding:12px 14px;border-radius:12px;background:#10275f;border:1px solid #1e4b97;border-left:4px solid #2a4f8f}
+.rent-board span{display:block;color:#9db1d5;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+.rent-board strong{display:block;margin-top:6px;color:#fff;font:800 20px Manrope}
+.rent-board small{display:block;margin-top:2px;color:#a9bde2;font-size:11px}
+.rent-board .is-alert{border-left-color:#e25b5b}
+.rent-board .is-alert strong{color:#ff8580}
+.rent-row{display:flex;align-items:flex-start;gap:12px;padding:10px 12px;margin-top:8px;border-left:4px solid #2a4f8f;background:#10275f}
+.rent-tone-green{border-left-color:#3dcaa4}
+.rent-tone-yellow{border-left-color:#e2b34a}
+.rent-tone-orange{border-left-color:#ff9e3d}
+.rent-tone-red{border-left-color:#e25b5b}
+.tag-orange{background:#3a2a12;color:#ffc27a;border:1px solid #ff9e3d}
+.rent-pay-box{flex:1 0 100%;display:flex;flex-wrap:wrap;gap:8px}
+.rent-pay{min-width:180px;padding:8px 10px;border-radius:10px;background:#0c2d68}
+.rent-pay span{display:block;color:#9db1d5;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+.rent-pay strong,.rent-pay b{display:block;margin-top:3px;color:#fff;font:800 16px Manrope}
+.rent-pay small{display:block;margin-top:2px;color:#c5d6f2;font-size:12px}
+.rent-pay.is-soon{background:#3a3014}
+.rent-pay.is-today{background:#3a2a12}
+.rent-pay.is-today span,.rent-pay.is-today strong{color:#ffd48a}
+.rent-pay.is-overdue{background:#3a1d2a}
+.rent-pay.is-overdue span,.rent-pay.is-overdue strong,.rent-pay.is-overdue small{color:#ff9b93}
+.rent-pay.is-received{background:#12382e}
+.rent-pay.is-received span,.rent-pay.is-received strong{color:#7ddec4}
+.rent-row{display:flex;align-items:flex-start;gap:12px;padding:10px 12px;margin-top:8px}
 .rent-row-main{display:flex;flex-wrap:wrap;gap:8px 16px;flex:1}
 .rent-row-main div{min-width:110px}
 .rent-row-main span{display:block;color:#9db1d5;font-size:11px}
@@ -400,4 +425,4 @@ select.fx-currency-store{display:none!important}
 .rent-alert-row b{display:block;color:#fff;font-size:16px}
 .rent-alert-row span{display:block;margin-top:4px;color:#ffd48a;font-size:13px;font-weight:700}
 .rent-alert-row small{display:block;margin-top:3px;color:#f3e6d0;font-weight:600}
-@media(max-width:720px){.rent-stats{grid-template-columns:1fr 1fr}.rent-alert-row,.rent-row-actions{align-items:flex-start;flex-wrap:wrap}}
+@media(max-width:720px){.rent-board{grid-template-columns:1fr 1fr}.rent-stats{grid-template-columns:1fr 1fr}.rent-alert-row,.rent-row-actions{align-items:flex-start;flex-wrap:wrap}}

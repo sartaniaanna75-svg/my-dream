@@ -421,19 +421,25 @@
       const rent = asset.rent || {};
       if ((asset.usage || asset.usageStatus) === 'Сдаётся в аренду') {
         (rent.payments || []).forEach(function (payment) {
-          const overdue = payment.status !== 'Получено' && daysFromNow(payment.date) < 0;
-          const place = asset.name + (asset.description ? ' · ' + asset.description : '');
+          const place = asset.name || 'Объект';
+          const tenant = payment.tenant || rent.tenant || '';
           const received = payment.status === 'Получено';
-          events.push({ date: payment.date, title: 'Поступление аренды', label: overdue ? 'Просрочено' : 'Поступление аренды', primary: place, secondary: rent.tenant || '', sub: place, amount: payment.amount, amountText: rub(payment.amount), rubHint: '', type: overdue ? 'rent-overdue' : 'rent', kind: 'rent', status: received ? 'Получено' : overdue ? 'Просрочено' : 'Ожидается', attention: overdue ? 'overdue' : '', noteLines: ['Поступление ' + fullDate(payment.date)], done: received, id: 'rent-' + asset.id + '-' + payment.id });
+          const overdue = !received && daysFromNow(payment.date) < 0;
+          const status = received ? 'Получено' : (overdue ? 'Просрочено' : 'Ожидается');
+          const shown = received && payment.receivedAmount != null && payment.receivedAmount !== '' ? payment.receivedAmount : payment.amount;
+          events.push({ date: payment.date, title: 'Аренда — ' + place, label: 'Аренда — ' + place, primary: place, secondary: tenant ? ('Арендатор: ' + tenant) : '', sub: place, amount: shown, amountText: typeof moneyOriginal === 'function' ? moneyOriginal(shown, payment.currency || rent.currency || 'RUB') : rub(shown), rubHint: '', type: overdue ? 'rent-overdue' : 'rent', kind: 'rent', status: status, attention: overdue ? 'overdue' : '', noteLines: [tenant ? ('Арендатор: ' + tenant) : '', status], done: received, id: 'rent-' + asset.id + '-' + payment.id });
         });
       }
       (asset.parts || []).forEach(function (part) {
         if (part.usage !== 'Сдаётся в аренду') return;
         (part.rentPayments || []).forEach(function (payment) {
-          const place = asset.name + ' · ' + (part.name || 'Помещение');
-          const overdue = payment.status !== 'Получено' && daysFromNow(payment.date) < 0;
+          const place = (asset.name || 'Объект') + ' / ' + (part.name || 'Помещение');
+          const tenant = payment.tenant || part.tenant || '';
           const receivedPart = payment.status === 'Получено';
-          events.push({ date: payment.date, title: 'Поступление аренды', label: overdue ? 'Просрочено' : 'Поступление аренды', primary: place, secondary: '', sub: place, amount: payment.amount, amountText: rub(payment.amount), rubHint: '', type: overdue ? 'rent-overdue' : 'rent', kind: 'rent', status: receivedPart ? 'Получено' : overdue ? 'Просрочено' : 'Ожидается', attention: overdue ? 'overdue' : '', noteLines: ['Поступление ' + fullDate(payment.date)], done: receivedPart, id: 'rent-part-' + asset.id + '-' + part.id + '-' + payment.id });
+          const overdue = !receivedPart && daysFromNow(payment.date) < 0;
+          const status = receivedPart ? 'Получено' : (overdue ? 'Просрочено' : 'Ожидается');
+          const shown = receivedPart && payment.receivedAmount != null && payment.receivedAmount !== '' ? payment.receivedAmount : payment.amount;
+          events.push({ date: payment.date, title: 'Аренда — ' + place, label: 'Аренда — ' + place, primary: place, secondary: tenant ? ('Арендатор: ' + tenant) : '', sub: place, amount: shown, amountText: typeof moneyOriginal === 'function' ? moneyOriginal(shown, payment.currency || part.rentCurrency || 'RUB') : rub(shown), rubHint: '', type: overdue ? 'rent-overdue' : 'rent', kind: 'rent', status: status, attention: overdue ? 'overdue' : '', noteLines: [tenant ? ('Арендатор: ' + tenant) : '', status], done: receivedPart, id: 'rent-part-' + asset.id + '-' + part.id + '-' + payment.id });
         });
       });
     });

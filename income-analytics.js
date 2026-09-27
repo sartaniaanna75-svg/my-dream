@@ -131,7 +131,7 @@
       date: payment.date,
       currency: payment.currency || currency || 'RUB',
       plan: num(payment.amount),
-      fact: payment.status === 'Получено' ? num(payment.amount) : 0
+      fact: payment.status === 'Получено' ? num(payment.receivedAmount != null && payment.receivedAmount !== '' ? payment.receivedAmount : payment.amount) : 0
     }));
   }
 
