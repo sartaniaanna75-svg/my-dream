@@ -575,17 +575,154 @@
     ].filter(Boolean);
     const extraBlock = extras.length ? '<div class="asset-extra">' + extras.map(function (row) { return '<div><span>' + esc(row[0]) + '</span><strong>' + esc(row[1]) + '</strong></div>'; }).join('') + '</div>' : '';
     const detailBody = foreign && fxFacts ? fxFacts : detailMetrics + valueBlock + (purchaseOpen ? revalueBlock : '');
-    return '<article class="asset-row panel"><div class="asset-row-main"><div class="asset-row-title"><strong>' + esc(asset.name) + '</strong><span>' + meta + '</span></div><div class="asset-row-facts"><div><span>Текущая стоимость</span><strong>' + currentMain + '</strong>' + (currentSub ? '<small>' + currentSub + '</small>' : '') + '</div>' + payFacts + '</div><span class="tag asset-status ' + statusClass + '">' + esc(statusLabel) + '</span><button type="button" class="ghost-button asset-more" aria-expanded="false" onclick="toggleAssetDetails(\'' + asset.id + '\',this)">Подробнее</button></div><div class="asset-details" id="asset-details-' + asset.id + '" hidden><div class="asset-details-head"><p class="eyebrow">' + (foreign ? 'ЗАРУБЕЖНОЕ ИМУЩЕСТВО' : 'РУБЛИ') + '</p>' + actions('asset', asset.id) + '</div>' + detailBody + extraBlock + partsView + historyView + payNote + '</div></article>';
+    return '<article class="asset-row panel"><div class="asset-row-main"><div class="asset-row-title"><strong>' + esc(asset.name || asset.type || 'Объект') + '</strong><span>' + meta + '</span></div><div class="asset-row-facts"><div><span>Текущая стоимость</span><strong>' + currentMain + '</strong>' + (currentSub ? '<small>' + currentSub + '</small>' : '') + '</div>' + payFacts + '</div><span class="tag asset-status ' + statusClass + '">' + esc(statusLabel) + '</span><button type="button" class="ghost-button asset-more" onclick="openAssetFocus(\'' + asset.id + '\')">Подробнее</button></div></article>';
   }
 
-  window.toggleAssetDetails = function (id, button) {
-    const panel = document.getElementById('asset-details-' + id);
-    if (!panel) return;
-    const open = panel.hidden;
-    panel.hidden = !open;
-    button.textContent = open ? 'Скрыть' : 'Подробнее';
-    button.setAttribute('aria-expanded', open ? 'true' : 'false');
+  let openedAssetId = '';
+  let assetListScroll = 0;
+
+  function pageScroll() {
+    return document.scrollingElement || document.documentElement;
+  }
+
+  function partRentState(part) {
+    const usage = part.usage || '';
+    if (usage === 'Сдаётся в аренду') return { text: 'Сдано', hot: false };
+    if (usage === 'Планируется сдача в аренду') return { text: 'Планируется к сдаче', hot: true };
+    if (usage === 'Не используется / свободно') return { text: 'Свободен / ищем арендатора', hot: true };
+    return { text: usage || 'Не указано', hot: false };
+  }
+
+  function partRentMoney(part) {
+    if (!(num(part.rentAmount) > 0)) return '';
+    const code = part.rentCurrency || 'RUB';
+    const period = part.rentPeriod === 'Квартал' ? 'квартал' : part.rentPeriod === 'Год' ? 'год' : 'месяц';
+    return moneyOriginal(part.rentAmount, code) + ' / ' + period;
+  }
+
+  function assetIsComplex(asset) {
+    return (asset.type || asset.category || '') === 'Территория или имущественный комплекс';
+  }
+
+  function assetPartsBlock(asset) {
+    const cards = (asset.parts || []).map(function (part, index) {
+      const rentState = partRentState(part);
+      const money = partRentMoney(part);
+      const when = part.rentStart ? fullDate(part.rentStart) : '';
+      const rented = part.usage === 'Сдаётся в аренду';
+      const lines = '<div><span>Статус аренды</span><strong>' + (rentState.hot ? '⚠ ' : '') + esc(rentState.text) + '</strong></div>' +
+        (money ? '<div><span>' + (rented ? 'Аренда' : 'Планируемая аренда') + '</span><strong>' + money + '</strong></div>' : '') +
+        (part.tenant ? '<div><span>Арендатор</span><strong>' + esc(part.tenant) + '</strong></div>' : '') +
+        (when ? '<div><span>' + (rented ? 'Дата начала' : 'Планируемая дата') + '</span><strong>' + when + '</strong></div>' : '');
+      const more = [part.type, part.area ? part.area + ' м²' : '', part.rentEnd ? 'до ' + fullDate(part.rentEnd) : '', part.rentPhone ? 'контакт ' + part.rentPhone : '', part.comment || ''].filter(Boolean).join(' · ');
+      return '<article class="asset-part-card"><div class="asset-part-head"><b>' + (index + 1) + '. ' + esc(part.name || 'Помещение') + '</b><span>' + esc([part.type, part.area ? part.area + ' м²' : ''].filter(Boolean).join(' · ')) + '</span></div><div class="asset-part-facts">' + lines + '</div><div class="asset-part-actions"><button type="button" class="ghost-button" onclick="toggleAssetPart(\'' + asset.id + '\',\'' + part.id + '\')">Подробнее</button><button type="button" class="ghost-button" onclick="openAssetPart(\'' + asset.id + '\',\'' + part.id + '\')">Изменить</button></div><div class="asset-part-more" id="part-more-' + asset.id + '-' + part.id + '" hidden>' + (more ? esc(more) : 'Дополнительных сведений нет') + '</div></article>';
+    }).join('');
+    const note = assetIsComplex(asset)
+      ? 'Стоимость территории учтена один раз. Помещения не увеличивают капитал повторно.'
+      : 'Эти помещения относятся только к этому объекту и не увеличивают капитал повторно.';
+    return '<section class="asset-parts-block"><div class="asset-parts-head"><div><p class="eyebrow">СОСТАВ ОБЪЕКТА</p><h3>Помещения и части</h3></div><button type="button" class="primary-button" onclick="openAssetPart(\'' + asset.id + '\')">+ Добавить помещение / часть</button></div>' + (cards || '<div class="rent-empty">Помещений пока нет. Новое помещение будет относиться только к этому объекту.</div>') + '<p class="asset-open-note">' + note + '</p></section>';
+  }
+
+  function assetFocusPage(asset) {
+    const currency = asset.currency || 'RUB';
+    const foreign = assetIsForeign(asset);
+    const change = num(asset.value) - num(asset.price);
+    const todayValue = foreign ? (rubApprox(asset.value, currency, asset) === 'курс не задан' ? 'курс не задан' : rub(assetAmountRub(asset, asset.value))) : rub(asset.value);
+    const prepareRate = liveRate(currency, asset);
+    const prepareText = prepareRate > 0 ? '≈ ' + rub(assetRemaining(asset) * prepareRate) : 'курс не задан';
+    const metrics = foreign
+      ? '<div class="asset-metrics asset-fx-facts"><div><span>Валюта договора</span><strong>' + esc(currency) + '</strong></div><div><span>Стоимость по договору</span><strong>' + moneyOriginal(asset.price, currency) + '</strong><small>' + contractTodayText(asset) + '</small></div><div><span>Оплачено в валюте</span><strong>' + moneyOriginal(assetPaid(asset), currency) + '</strong></div><div><span>Фактически потрачено</span><strong>' + actualSpentText(asset) + '</strong></div><div><span>Осталось оплатить</span><strong>' + moneyOriginal(assetRemaining(asset), currency) + '</strong></div><div><span>Нужно подготовить</span><strong>' + prepareText + '</strong><small>по текущему курсу</small></div></div>'
+      : '<div class="asset-metrics"><div><span>Стоимость по договору</span><strong>' + moneyOriginal(asset.price, 'RUB') + '</strong></div><div><span>Оплачено</span><strong>' + moneyOriginal(assetPaid(asset), 'RUB') + '</strong></div><div><span>Осталось</span><strong>' + moneyOriginal(assetRemaining(asset), 'RUB') + '</strong></div><div><span>Фактически вложено</span><strong>' + actualSpentText(asset) + '</strong></div></div>';
+    const valueBlock = foreign
+      ? '<div class="asset-value-block"><div><span>Текущая оценка</span><strong>' + moneyOriginal(asset.value, currency) + '</strong></div><div><span>Текущий курс</span><strong>' + rateLabel(currency, asset) + '</strong></div><div><span>Стоимость сегодня</span><strong>' + todayValue + '</strong></div><div><span>Изменение цены объекта</span><strong>' + signedOriginal(change, currency) + '</strong></div></div>'
+      : '<div class="asset-value-block"><div><span>Текущая оценка</span><strong>' + rub(asset.value) + '</strong></div><div><span>Стоимость сегодня</span><strong>' + rub(asset.value) + '</strong></div><div><span>Изменение цены объекта</span><strong>' + signedOriginal(change, 'RUB') + '</strong></div></div>';
+    const purchaseOpen = asset.ownershipStatus === 'Покупается';
+    const statusLabel = asset.ownershipStatus || (purchaseOpen ? 'Покупается' : 'В собственности');
+    const fxFacts = typeof window.fxAssetCardHtml === 'function' ? window.fxAssetCardHtml(asset) : '';
+    const historyView = (asset.rateHistory || []).length ? '<div class="asset-parts-view"><h4>История стоимости</h4>' + asset.rateHistory.map(function (entry) { return '<div class="part-line"><strong>' + dateText(entry.date) + '</strong><span>' + (entry.rubValue != null ? rub(entry.rubValue) : '') + (entry.rate ? ' · курс ' + entry.rate : '') + '</span></div>'; }).join('') + '</div>' : '';
+    const payNote = purchaseOpen && assetPayments(asset).length ? '<p class="asset-open-note">График платежей хранится у объекта и контролируется в разделе «Обязательства», без второй копии долга.</p>' : '';
+    const extras = [
+      asset.owner ? ['Собственник', asset.owner] : null,
+      (asset.acquisition || asset.purchase) ? ['Дата приобретения', dateText(asset.acquisition || asset.purchase)] : null,
+      (asset.usage || asset.usageStatus) ? ['Использование', asset.usage || asset.usageStatus] : null,
+      asset.comment ? ['Комментарий', asset.comment] : null
+    ].filter(Boolean);
+    const extraBlock = extras.length ? '<div class="asset-extra">' + extras.map(function (row) { return '<div><span>' + esc(row[0]) + '</span><strong>' + esc(row[1]) + '</strong></div>'; }).join('') + '</div>' : '';
+    const detailBody = foreign && fxFacts ? fxFacts : (purchaseOpen ? metrics : '') + valueBlock;
+    const title = asset.name || asset.type || 'Объект';
+    const partsBlock = (assetIsComplex(asset) || (asset.parts || []).length) ? assetPartsBlock(asset) : '';
+    return '<div class="view-wrap asset-focus"><div class="asset-focus-nav"><button type="button" class="ghost-button asset-back" onclick="closeAssetFocus()">← Назад к имуществу</button><p class="eyebrow">Имущество &gt; ' + esc(title) + '</p></div><section class="panel asset-focus-card"><div class="asset-details-head"><div><h2>' + esc(title) + '</h2><p>' + esc(asset.type || asset.category || 'Имущество') + '</p></div>' + actions('asset', asset.id) + '</div><div class="asset-extra asset-identity"><div><span>Адрес</span><strong>' + esc(asset.description || '—') + '</strong></div><div><span>Статус</span><strong>' + esc(statusLabel) + '</strong></div></div>' + detailBody + extraBlock + historyView + payNote + partsBlock + '</section></div>';
+  }
+
+  window.openAssetFocus = function (id) {
+    const root = pageScroll();
+    assetListScroll = root ? root.scrollTop : 0;
+    openedAssetId = id;
+    render();
+    if (root) root.scrollTop = 0;
   };
+
+  window.closeAssetFocus = function () {
+    openedAssetId = '';
+    render();
+    const root = pageScroll();
+    if (root) root.scrollTop = assetListScroll;
+  };
+
+  window.toggleAssetPart = function (assetId, partId) {
+    const node = document.getElementById('part-more-' + assetId + '-' + partId);
+    if (node) node.hidden = !node.hidden;
+  };
+
+  window.openAssetPart = function (assetId, partId) {
+    const asset = state.assets.find(function (item) { return item.id === assetId; });
+    if (!asset) return;
+    const part = partId ? (asset.parts || []).find(function (item) { return item.id === partId; }) || {} : {};
+    const currency = part.rentCurrency || 'RUB';
+    const amount = part.rentAmount ? (typeof formatMoneyInput === 'function' ? formatMoneyInput(part.rentAmount) : part.rentAmount) : '';
+    modalShell(partId ? 'Изменить помещение' : 'Новое помещение',
+      '<p class="rent-modal-object">' + esc(asset.name || 'Объект') + '</p>' +
+      field('Название', '<input name="name" value="' + esc(part.name || '') + '" required>') +
+      field('Тип', '<select name="type">' + partTypeOptions(part.type) + '</select>') +
+      field('Площадь, м²', '<input name="area" inputmode="decimal" value="' + esc(part.area || '') + '">') +
+      field('Использование', '<select name="usage">' + partUsageOptions(part.usage) + '</select>') +
+      field('Арендатор', '<input name="tenant" value="' + esc(part.tenant || '') + '">') +
+      field('Сумма аренды', '<input name="rentAmount" inputmode="decimal" value="' + esc(amount) + '">') +
+      field('Валюта аренды', '<select name="rentCurrency" data-currency-catalog="1"><option>' + esc(currency) + '</option></select>') +
+      field('Дата начала аренды', '<input name="rentStart" type="date" value="' + esc(part.rentStart || '') + '">') +
+      field('Комментарий', '<input name="comment" value="' + esc(part.comment || '') + '">'),
+      partId ? 'Сохранить' : 'Добавить помещение',
+      function (form) {
+        const name = form.elements.name.value.trim();
+        if (!name) { alert('Укажите название помещения.'); return; }
+        if (!Array.isArray(asset.parts)) asset.parts = [];
+        const next = {
+          name: name,
+          type: form.elements.type.value,
+          area: form.elements.area.value.trim(),
+          usage: form.elements.usage.value,
+          tenant: form.elements.tenant.value.trim(),
+          rentAmount: num(form.elements.rentAmount.value),
+          rentCurrency: form.elements.rentCurrency.value || 'RUB',
+          rentStart: form.elements.rentStart.value,
+          comment: form.elements.comment.value.trim()
+        };
+        if (partId && part.id) Object.assign(part, next);
+        else asset.parts.push(Object.assign({ id: uid() }, next));
+        save();
+        closeModal();
+        render();
+      });
+    const select = document.querySelector('#safe-form [name="rentCurrency"]');
+    if (select && window.attachCurrencyPicker) window.attachCurrencyPicker(select, { value: currency, allowRub: true });
+  };
+
+  const previousSetView = window.setView;
+  window.setView = function (view) {
+    if (view === 'assets') openedAssetId = '';
+    previousSetView(view);
+  };
+  setView = window.setView;
 
   window.previewPaymentPlan = function (input) {
     const need = input.closest('.asset-pay') && input.closest('.asset-pay').querySelector('.plan-need');
@@ -619,6 +756,11 @@
 
   assets = function () {
     ensureCapitalState();
+    if (openedAssetId) {
+      const selected = state.assets.find(function (item) { return String(item.id) === String(openedAssetId); });
+      if (selected) return assetFocusPage(selected);
+      openedAssetId = '';
+    }
     let totalValue = 0;
     let invested = 0;
     let investedKnown = true;
