@@ -131,6 +131,8 @@
 
   function safeRate(safe) {
     if (!safe || !safe.currency || safe.currency === 'RUB') return 1;
+    const cabinet = num(state.fx && state.fx[safe.currency]);
+    if (cabinet > 0) return cabinet;
     if (num(safe.currentRate) > 0) return num(safe.currentRate);
     return liveRate(safe.currency) || 0;
   }
@@ -369,33 +371,47 @@
     render();
   };
 
+  function fxCatalog() {
+    if (typeof currencyAll === 'function') return currencyAll().filter(function (item) { return item && item.code && item.code !== 'RUB'; });
+    return [{ code: 'USD', title: 'Доллар США' }, { code: 'EUR', title: 'Евро' }, { code: 'AED', title: 'Дирхам ОАЭ' }, { code: 'CNY', title: 'Китайский юань' }, { code: 'GBP', title: 'Фунт стерлингов' }, { code: 'TRY', title: 'Турецкая лира' }, { code: 'CHF', title: 'Швейцарский франк' }, { code: 'JPY', title: 'Японская иена' }];
+  }
+
   const baseSettings = settings;
   settings = function () {
     ensureCapitalState();
     const fx = state.fx;
     const updated = fx.rateDate || fx.updated;
     const source = fx.source ? ' · ' + esc(fx.source) : '';
-    const panel = '<div class="view-wrap"><div class="panel fx-panel"><div class="section-heading"><div><p class="eyebrow">ВАЛЮТА</p><h3>Курсы валют</h3><p>Исходные суммы в долларах и евро не меняются. Рублёвый эквивалент пересчитывается по этому курсу.</p></div></div><div class="fx-grid"><label>USD<input name="fx-usd" inputmode="decimal" value="' + esc(rateInput(fx.USD)) + '" placeholder="95,00"><span>₽</span></label><label>EUR<input name="fx-eur" inputmode="decimal" value="' + esc(rateInput(fx.EUR)) + '" placeholder="103,20"><span>₽</span></label></div><div class="form-field fx-mode"><label>Режим курса</label><select id="fx-mode"><option ' + (fx.mode !== 'Автоматический' ? 'selected' : '') + '>Ручной</option><option ' + (fx.mode === 'Автоматический' ? 'selected' : '') + '>Автоматический</option></select></div><div class="button-row"><button class="primary-button" type="button" onclick="refreshOfficialRates()">Обновить курс</button><button class="ghost-button" type="button" onclick="saveManualRates()">Сохранить курс</button></div><p class="muted fx-status">Последнее обновление: ' + (updated ? dateText(updated) : 'ещё не было') + source + '. Кнопка «Обновить курс» запрашивает курс ЦБ РФ. Если связи нет, остаются последние сохранённые значения.</p></div></div>';
+    const skipped = fx.skipped ? ' Не найдены в курсе ЦБ: ' + esc(fx.skipped) + '.' : '';
+    const rows = fxCatalog().map(function (item) {
+      const legacy = item.code === 'USD' ? ' name="fx-usd"' : item.code === 'EUR' ? ' name="fx-eur"' : '';
+      return '<label><span class="fx-name">' + esc(item.code + ' — ' + (item.title || item.code)) + '</span><input data-fx-code="' + esc(item.code) + '"' + legacy + ' inputmode="decimal" value="' + esc(rateInput(fx[item.code])) + '"><span class="fx-unit">₽</span></label>';
+    }).join('');
+    const panel = '<div class="view-wrap"><div class="panel fx-panel"><div class="section-heading"><div><p class="eyebrow">ВАЛЮТА</p><h3>Курсы валют</h3><p>Суммы в иностранной валюте не меняются. Текущий рублёвый эквивалент считается по этим курсам. Курс уже проведённой операции остаётся в её истории.</p></div></div><div class="fx-grid">' + rows + '</div><div class="form-field fx-mode"><label>Режим курса</label><select id="fx-mode"><option ' + (fx.mode !== 'Автоматический' ? 'selected' : '') + '>Ручной</option><option ' + (fx.mode === 'Автоматический' ? 'selected' : '') + '>Автоматический</option></select></div><div class="button-row"><button class="primary-button" type="button" onclick="refreshOfficialRates()">Обновить курс</button><button class="ghost-button" type="button" onclick="saveManualRates()">Сохранить курс</button></div><p class="muted fx-status">Последнее обновление: ' + (updated ? dateText(updated) : 'ещё не было') + source + '.' + skipped + ' Кнопка «Обновить курс» запрашивает курсы ЦБ РФ. Если связи нет, остаются последние сохранённые значения.</p></div></div>';
     return baseSettings() + panel;
   };
 
   function readFxInputs() {
-    const usd = document.querySelector('[name="fx-usd"]');
-    const eur = document.querySelector('[name="fx-eur"]');
+    const inputs = [...document.querySelectorAll('[data-fx-code]')];
     const mode = document.getElementById('fx-mode');
-    if (!usd || !eur) return null;
-    return { USD: usd.value, EUR: eur.value, mode: mode && mode.value === 'Автоматический' ? 'Автоматический' : 'Ручной' };
+    if (!inputs.length) return null;
+    const rates = {};
+    inputs.forEach(function (input) { rates[input.getAttribute('data-fx-code')] = input.value; });
+    return { rates: rates, mode: mode && mode.value === 'Автоматический' ? 'Автоматический' : 'Ручной' };
   }
 
   window.saveManualRates = function () {
     const values = readFxInputs();
     if (!values) return;
-    state.fx.USD = values.USD.trim() === '' ? '' : num(values.USD);
-    state.fx.EUR = values.EUR.trim() === '' ? '' : num(values.EUR);
+    Object.keys(values.rates).forEach(function (code) {
+      const raw = values.rates[code];
+      state.fx[code] = String(raw || '').trim() === '' ? '' : num(raw);
+    });
     state.fx.mode = values.mode;
     state.fx.source = 'Вручную';
     state.fx.updated = isoDate(today);
     state.fx.rateDate = isoDate(today);
+    state.fx.skipped = '';
     save();
     render();
   };
@@ -407,19 +423,28 @@
       const response = await fetch('https://www.cbr-xml-daily.ru/daily_json.js');
       if (!response.ok) throw new Error('status');
       const data = await response.json();
-      const usd = data.Valute && data.Valute.USD;
-      const eur = data.Valute && data.Valute.EUR;
-      if (!usd || !eur) throw new Error('payload');
-      state.fx.USD = num(usd.Value) / (num(usd.Nominal) || 1);
-      state.fx.EUR = num(eur.Value) / (num(eur.Nominal) || 1);
-      state.fx.updated = isoDate(today);
-      state.fx.rateDate = String(data.Date || '').slice(0, 10);
-      state.fx.source = 'ЦБ РФ';
+      const valute = data.Valute || {};
+      const next = Object.assign({}, state.fx);
+      const missing = [];
+      let updated = 0;
+      fxCatalog().forEach(function (item) {
+        const row = valute[item.code];
+        const perUnit = row ? num(row.Value) / (num(row.Nominal) || 1) : 0;
+        if (!(perUnit > 0)) { missing.push(item.code); return; }
+        next[item.code] = perUnit;
+        updated += 1;
+      });
+      if (!updated) throw new Error('payload');
+      next.updated = isoDate(today);
+      next.rateDate = String(data.Date || '').slice(0, 10);
+      next.source = 'ЦБ РФ';
+      next.skipped = missing.join(', ');
+      state.fx = next;
       save();
       render();
     } catch (error) {
       if (button) button.disabled = false;
-      if (!silent) alert('Не удалось обновить курс. Проверьте интернет или введите курс вручную. Сохранённые курсы не изменены.');
+      if (!silent) alert('Не удалось обновить курсы. Проверьте интернет или введите курс вручную. Сохранённые курсы не изменены.');
     }
   };
 

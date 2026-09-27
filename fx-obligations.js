@@ -64,6 +64,8 @@
 
   function ownRate(asset, currency, explicit) {
     if (!currency || currency === 'RUB') return 1;
+    const cabinet = num(state.fx && state.fx[currency]);
+    if (cabinet > 0) return cabinet;
     if (num(explicit) > 0) return num(explicit);
     if (asset && (asset.currency || 'RUB') === currency && num(asset.currentRate) > 0) return num(asset.currentRate);
     if (typeof window.liveRate === 'function') {
