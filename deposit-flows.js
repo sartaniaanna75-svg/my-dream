@@ -322,14 +322,117 @@
     return '<option value="account|' + esc(account.id) + '">' + esc(accountDestinationText(account)) + '</option>';
   }
 
+  function safeStoredBalance(safe) {
+    return (safe.operations || []).reduce(function (sum, op) {
+      const amount = Math.abs(num(op.amount));
+      return sum + (op.direction === 'out' ? -amount : amount);
+    }, 0);
+  }
+
+  function ownerOwnsSafe(safe, owner) {
+    const name = ownerKey(safe && (safe.owner || safe.name));
+    const who = ownerKey(owner);
+    if (!name || !who) return false;
+    return name === who || who.indexOf(name + ' ') === 0 || name.indexOf(who + ' ') === 0;
+  }
+
   function safeDestinationOptions() {
     return (state.safes || []).filter(function (safe) { return (safe.currency || 'RUB') === 'RUB'; }).map(function (safe) {
-      const balance = (safe.operations || []).reduce(function (sum, op) {
-        const amount = Math.abs(num(op.amount));
-        return sum + (op.direction === 'out' ? -amount : amount);
-      }, 0);
-      return '<option value="safe|' + esc(safe.id) + '">Сейф · ' + esc(safe.name || 'Сейф') + ' · ' + rub(balance) + '</option>';
+      return '<option value="safe|' + esc(safe.id) + '">Сейф · ' + esc(safe.name || 'Сейф') + ' · ' + rub(safeStoredBalance(safe)) + '</option>';
     }).join('');
+  }
+
+  function fundingOptions(owner, kind) {
+    if (!ownerKey(owner)) return '<option value="">Сначала укажите, на кого оформлен вклад</option>';
+    if (kind === 'safe') {
+      const safes = (state.safes || []).filter(function (safe) {
+        return (safe.currency || 'RUB') === 'RUB' && ownerOwnsSafe(safe, owner);
+      });
+      if (!safes.length) return '<option value="">Нет рублёвого сейфа этого владельца</option>';
+      return '<option value="">Выберите сейф</option>' + safes.map(function (safe) {
+        return '<option value="safe|' + esc(safe.id) + '">Сейф · ' + esc(safe.name || 'Сейф') + ' · ' + rub(safeStoredBalance(safe)) + '</option>';
+      }).join('');
+    }
+    const accounts = state.accounts.filter(function (account) {
+      return (account.currency || 'RUB') === 'RUB' && sameOwner(account.owner, owner);
+    });
+    if (!accounts.length) return '<option value="">Нет рублёвых карт и счетов этого владельца</option>';
+    return '<option value="">Выберите карту или счёт</option>' + accounts.map(function (account) {
+      return '<option value="account|' + esc(account.id) + '">' + esc(accountDestinationText(account)) + '</option>';
+    }).join('');
+  }
+
+  function shortageMessage(kind, account, available) {
+    return 'На выбранном источнике недостаточно средств. Доступно: ' + rub(available);
+  }
+
+  function fundingBalance(sourceValue) {
+    const parts = String(sourceValue || '').split('|');
+    const kind = parts[0];
+    const targetId = parts.slice(1).join('|');
+    if (kind === 'account') {
+      const account = state.accounts.find(function (item) { return item.id === targetId; });
+      if (!account || (account.currency || 'RUB') !== 'RUB') return null;
+      return { kind: kind, id: targetId, account: account, available: moneyOk(account.balance) };
+    }
+    if (kind === 'safe') {
+      const safe = (state.safes || []).find(function (item) { return item.id === targetId; });
+      if (!safe || (safe.currency || 'RUB') !== 'RUB') return null;
+      return { kind: kind, id: targetId, safe: safe, available: moneyOk(safeStoredBalance(safe)) };
+    }
+    return null;
+  }
+
+  function applyOpeningFunding(deposit, sourceValue, amount) {
+    const source = fundingBalance(sourceValue);
+    const moveId = 'open-fund-' + deposit.id;
+    if ((deposit.movements || []).some(function (item) { return item.id === moveId; })) return true;
+    if (!source || source.available + 0.001 < amount) return false;
+    const name = deposit.name || deposit.bank || 'Вклад';
+    const date = deposit.open || isoDate(today);
+    let label = '';
+    if (source.kind === 'account') {
+      const moved = pushAccountMovement(source.account, {
+        id: moveId,
+        date: date,
+        type: 'Перевод',
+        amount: amount,
+        direction: 'out',
+        comment: 'Открытие вклада «' + name + '». Перевод своих денег, не расход.',
+        text: 'Перевод на вклад «' + name + '»'
+      });
+      if (!moved) return false;
+      label = accountTitle(source.account);
+    } else {
+      if (!Array.isArray(source.safe.operations)) source.safe.operations = [];
+      if (!source.safe.operations.some(function (op) { return op.id === moveId; })) {
+        source.safe.operations.push({
+          id: moveId,
+          date: date,
+          amount: amount,
+          currency: 'RUB',
+          direction: 'out',
+          comment: 'Открытие вклада «' + name + '». Перевод своих денег, не расход.'
+        });
+      }
+      label = 'Сейф ' + (source.safe.name || 'Сейф');
+    }
+    if (!Array.isArray(deposit.movements)) deposit.movements = [];
+    deposit.movements.push({
+      id: moveId,
+      date: date,
+      type: 'transfer-in',
+      flow: 'open',
+      amount: amount,
+      direction: 'in',
+      internal: true,
+      income: false,
+      text: 'Открытие вклада — ' + rub(amount) + ' с ' + label,
+      title: 'Открытие вклада',
+      route: label + ' → Вклад «' + name + '»'
+    });
+    deposit.funding = { kind: source.kind, id: source.id, label: label, amount: amount, date: date };
+    return true;
   }
 
   function destinationOptions(deposit, mode) {
@@ -372,14 +475,30 @@
   window.openCloseDeposit = function (id) {
     const deposit = state.deposits.find(function (item) { return item.id === id; });
     if (!deposit || deposit.closed) return;
+    const bookPrincipal = moneyOk(deposit.current);
     const interestDefault = deposit.status === 'Получено' ? 0 : num(deposit.expected);
+    const interestOn = interestDefault > 0;
     const interestValue = typeof formatMoneyInput === 'function' ? formatMoneyInput(interestDefault) : interestDefault;
-    document.getElementById('modal-root').innerHTML = '<div class="modal-backdrop" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-header"><h2>Закрыть вклад</h2><button class="close" type="button" onclick="closeModal()">×</button></div><form id="close-deposit-form"><div class="modal-body"><div class="form-grid"><div class="form-field"><label>Банк</label><input value="' + esc(deposit.bank || '—') + '" readonly></div><div class="form-field"><label>Название вклада</label><input value="' + esc(deposit.name || '—') + '" readonly></div><div class="form-field"><label>Последние 4 цифры</label><input value="' + esc(deposit.last4 ? '•••• ' + deposit.last4 : '—') + '" readonly></div><div class="form-field"><label>Сумма вклада</label><input value="' + esc(rub(deposit.current)) + '" readonly></div><div class="form-field"><label>Дата закрытия</label><input name="closedAt" type="date" value="' + isoDate(today) + '"></div><div class="form-field"><label>Фактически полученные проценты</label><input name="closeInterest" type="text" inputmode="decimal" autocomplete="off" value="' + esc(interestValue) + '"></div><div class="form-field full deposit-close-total"><label>Итого к получению</label><strong class="deposit-payout">' + rub(moneyOk(num(deposit.current) + num(interestDefault))) + '</strong></div><div class="form-field full"><label>Куда поступили деньги?</label><div class="deposit-owner-filter"><span>Владелец:</span><button type="button" class="ghost-button' + (ownerKey(deposit.owner) ? ' is-active' : '') + '" data-filter="owner">Владелец вклада</button><button type="button" class="ghost-button' + (ownerKey(deposit.owner) ? '' : ' is-active') + '" data-filter="all">Все</button></div><select name="destination">' + destinationOptions(deposit, ownerKey(deposit.owner) ? 'owner' : 'all') + '</select></div></div></div><div class="modal-footer"><button type="button" class="ghost-button" onclick="closeModal()">Отмена</button><button class="primary-button">Закрыть вклад</button></div></form></div></div>';
+    const principalValue = typeof formatMoneyInput === 'function' ? formatMoneyInput(bookPrincipal) : bookPrincipal;
+    document.getElementById('modal-root').innerHTML = '<div class="modal-backdrop" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-header"><h2>Закрыть вклад</h2><button class="close" type="button" onclick="closeModal()">×</button></div><form id="close-deposit-form"><div class="modal-body"><div class="form-grid"><div class="form-field"><label>Банк</label><input value="' + esc(deposit.bank || '—') + '" readonly></div><div class="form-field"><label>Название вклада</label><input value="' + esc(deposit.name || '—') + '" readonly></div><div class="form-field"><label>Последние 4 цифры</label><input value="' + esc(deposit.last4 ? '•••• ' + deposit.last4 : '—') + '" readonly></div><div class="form-field"><label>Фактически получено по основной сумме</label><input name="closePrincipal" type="text" inputmode="decimal" autocomplete="off" value="' + esc(principalValue) + '"></div><div class="form-field"><label>Дата закрытия</label><input name="closedAt" type="date" value="' + isoDate(today) + '"></div><div class="form-field full"><label><input name="interestReceived" type="checkbox"' + (interestOn ? ' checked' : '') + '> Проценты получены</label><small class="muted">Основная сумма — возврат своих денег, это не доход. В доход попадает только сумма процентов.</small></div><div class="form-field deposit-interest-field"' + (interestOn ? '' : ' hidden') + '><label>Фактически полученные проценты</label><input name="closeInterest" type="text" inputmode="decimal" autocomplete="off" value="' + esc(interestValue) + '"></div><div class="form-field full deposit-close-total"><label>На выбранную карту или счёт поступит</label><strong class="deposit-payout">' + rub(moneyOk(bookPrincipal + (interestOn ? num(interestDefault) : 0))) + '</strong><small class="muted">Доход от капитала: <b class="deposit-income">' + rub(interestOn ? interestDefault : 0) + '</b></small></div><div class="form-field full"><label>Куда зачислить деньги</label><div class="deposit-owner-filter"><span>Владелец:</span><button type="button" class="ghost-button' + (ownerKey(deposit.owner) ? ' is-active' : '') + '" data-filter="owner">Владелец вклада</button><button type="button" class="ghost-button' + (ownerKey(deposit.owner) ? '' : ' is-active') + '" data-filter="all">Все</button></div><select name="destination">' + destinationOptions(deposit, ownerKey(deposit.owner) ? 'owner' : 'all') + '</select></div></div></div><div class="modal-footer"><button type="button" class="ghost-button" onclick="closeModal()">Отмена</button><button class="primary-button">Закрыть вклад</button></div></form></div></div>';
     const form = document.getElementById('close-deposit-form');
+    const principalInput = form.querySelector('[name="closePrincipal"]');
     const interestInput = form.querySelector('[name="closeInterest"]');
+    const interestFlag = form.querySelector('[name="interestReceived"]');
+    const interestField = form.querySelector('.deposit-interest-field');
     const payout = form.querySelector('.deposit-payout');
-    const refresh = function () { payout.textContent = rub(moneyOk(num(deposit.current) + num(interestInput.value))); };
+    const incomeNote = form.querySelector('.deposit-income');
+    const interestNow = function () { return interestFlag.checked ? moneyOk(interestInput.value) : 0; };
+    const principalNow = function () { return moneyOk(principalInput.value); };
+    const refresh = function () {
+      const interest = interestNow();
+      interestField.hidden = !interestFlag.checked;
+      payout.textContent = rub(moneyOk(principalNow() + interest));
+      incomeNote.textContent = rub(interest);
+    };
+    principalInput.addEventListener('input', refresh);
     interestInput.addEventListener('input', refresh);
+    interestFlag.addEventListener('change', refresh);
     const destinationSelect = form.querySelector('[name="destination"]');
     form.querySelectorAll('[data-filter]').forEach(function (button) {
       button.addEventListener('click', function () {
@@ -394,28 +513,78 @@
       event.preventDefault();
       if (form.dataset.saving === '1' || deposit.closed) return;
       const date = form.querySelector('[name="closedAt"]').value;
-      const interest = moneyOk(interestInput.value);
+      const interest = interestNow();
       const target = form.querySelector('[name="destination"]').value;
+      const principal = principalNow();
       if (!date) { alert('Укажите дату закрытия.'); return; }
+      if (!(principal > 0)) { alert('Укажите фактически полученную основную сумму.'); return; }
       if (interest < 0) { alert('Проценты не могут быть отрицательными.'); return; }
+      if (interestFlag.checked && !(interest > 0)) { alert('Укажите сумму полученных процентов или снимите отметку.'); return; }
       if (!target) { alert('Укажите, куда поступили деньги.'); return; }
-      const payoutAmount = moneyOk(num(deposit.current) + interest);
+      form.dataset.saving = '1';
+      const payoutAmount = moneyOk(principal + interest);
       const kind = target === 'other' ? 'other' : target.split('|')[0];
       const targetId = target === 'other' ? '' : target.split('|').slice(1).join('|');
+      const depositName = deposit.name || deposit.bank || 'Вклад';
+      const payoutId = 'close-payout-' + deposit.id;
       let label = 'Другое / не учитывать перевод';
       if (kind === 'account') {
         const account = state.accounts.find(function (item) { return item.id === targetId; });
-        if (!account) { alert('Выберите карту или счёт.'); return; }
-        account.balance = moneyOk(num(account.balance) + payoutAmount);
+        if (!account) { form.dataset.saving = ''; alert('Выберите карту или счёт.'); return; }
+        if ((account.currency || 'RUB') !== 'RUB') { form.dataset.saving = ''; alert('Рублёвый вклад можно зачислить только на рублёвую карту или счёт.'); return; }
+        const moved = pushAccountMovement(account, {
+          id: payoutId,
+          date: date,
+          type: 'Пополнение',
+          amount: payoutAmount,
+          direction: 'in',
+          comment: 'Закрытие вклада «' + depositName + '»: тело ' + rub(principal) + (interest > 0 ? ', проценты ' + rub(interest) : '') + '.',
+          text: 'Закрытие вклада — основная сумма ' + rub(principal) + (interest > 0 ? ', проценты ' + rub(interest) : '')
+        });
+        if (!moved && !(account.movements || []).some(function (item) { return item.id === payoutId; })) { form.dataset.saving = ''; alert('Не удалось зачислить деньги на выбранную карту.'); return; }
         label = (account.bank || '—') + ' · ' + (String(account.owner || '').trim() || '—') + (account.last4 ? ' · •••• ' + account.last4 : '');
       } else if (kind === 'safe') {
         const safe = (state.safes || []).find(function (item) { return item.id === targetId; });
-        if (!safe || (safe.currency || 'RUB') !== 'RUB') { alert('Выберите рублёвый сейф.'); return; }
+        if (!safe || (safe.currency || 'RUB') !== 'RUB') { form.dataset.saving = ''; alert('Выберите рублёвый сейф.'); return; }
         if (!Array.isArray(safe.operations)) safe.operations = [];
-        safe.operations.push({ id: uid(), date: date, amount: payoutAmount, currency: 'RUB', direction: 'in', comment: 'Закрытие вклада «' + (deposit.name || deposit.bank || '') + '»' });
+        if (!safe.operations.some(function (op) { return op.id === payoutId; })) {
+          safe.operations.push({ id: payoutId, date: date, amount: payoutAmount, currency: 'RUB', direction: 'in', comment: 'Закрытие вклада «' + depositName + '»: тело ' + rub(principal) + (interest > 0 ? ', проценты ' + rub(interest) : '') + '.' });
+        }
         label = 'Сейф · ' + (safe.name || 'Сейф');
       }
-      form.dataset.saving = '1';
+      if (!Array.isArray(deposit.movements)) deposit.movements = [];
+      if (!deposit.movements.some(function (item) { return item.id === 'close-body-' + deposit.id; })) {
+        deposit.movements.push({
+          id: 'close-body-' + deposit.id,
+          date: date,
+          type: 'close',
+          flow: 'close',
+          amount: principal,
+          principal: principal,
+          interest: interest,
+          payout: payoutAmount,
+          destinationLabel: label,
+          direction: 'out',
+          internal: true,
+          income: false,
+          title: 'Закрытие вклада «' + depositName + '»',
+          text: 'Закрытие вклада — основная сумма ' + rub(principal) + ' → ' + label
+        });
+      }
+      if (interest > 0 && !deposit.movements.some(function (item) { return item.id === 'close-interest-' + deposit.id; })) {
+        deposit.movements.push({
+          id: 'close-interest-' + deposit.id,
+          date: date,
+          type: 'interest',
+          amount: interest,
+          direction: 'in',
+          income: true,
+          text: 'Получены проценты по вкладу — ' + rub(interest),
+          comment: 'Доход от капитала'
+        });
+        deposit.received = moneyOk(num(deposit.received) + interest);
+      }
+      deposit.current = principal;
       deposit.closed = true;
       deposit.closedAt = date;
       deposit.closeInterest = interest;
@@ -673,6 +842,9 @@
     if (!grid || grid.querySelector('[name="depositPurpose"]')) return;
     const deposit = id ? state.deposits.find(function (item) { return item.id === id; }) : null;
     grid.insertAdjacentHTML('beforeend', purposeFields(deposit));
+    if (!id) {
+      grid.insertAdjacentHTML('beforeend', '<div class="form-field full deposit-funding"><p class="eyebrow">ОТКУДА ДЕНЬГИ НА ВКЛАД</p><label>Тип источника</label><div class="deposit-owner-filter"><label><input type="radio" name="fundingKind" value="account" checked> Карта / счёт</label><label><input type="radio" name="fundingKind" value="safe"> Сейф</label></div><label>Конкретный источник</label><select name="fundingSource"></select><small class="muted">Деньги переносятся с выбранной карты, счёта или сейфа на вклад. Это не расход и не доход.</small></div>');
+    }
     const purposeSelect = grid.querySelector('[name="depositPurpose"]');
     const specific = grid.querySelector('.deposit-specific');
     const syncPurpose = function () { specific.hidden = purposeSelect.value !== 'specific'; };
@@ -681,7 +853,32 @@
     const allocationInput = grid.querySelector('[name="allocationAmount"]');
     if (allocationInput && typeof bindMoneyInput === 'function') bindMoneyInput(allocationInput);
     const previousSubmit = form.onsubmit;
+    const fundingPanel = grid.querySelector('.deposit-funding');
+    const fundingSelect = fundingPanel && fundingPanel.querySelector('[name="fundingSource"]');
+    if (fundingPanel) {
+      const fundingKindNow = function () {
+        const picked = fundingPanel.querySelector('[name="fundingKind"]:checked');
+        return picked && picked.value === 'safe' ? 'safe' : 'account';
+      };
+      const refillFunding = function () {
+        const owner = String(form.elements.owner && form.elements.owner.value || '').trim();
+        const current = fundingSelect.value;
+        fundingSelect.innerHTML = fundingOptions(owner, fundingKindNow());
+        const stillThere = [].some.call(fundingSelect.options, function (option) { return option.value && option.value === current; });
+        if (stillThere) fundingSelect.value = current;
+      };
+      const showFunding = function () { refillFunding(); };
+      fundingPanel.querySelectorAll('[name="fundingKind"]').forEach(function (input) {
+        input.addEventListener('change', refillFunding);
+      });
+      if (form.elements.owner) {
+        form.elements.owner.addEventListener('input', showFunding);
+        form.elements.owner.addEventListener('change', showFunding);
+      }
+      showFunding();
+    }
     form.onsubmit = function (event) {
+      if (form.dataset.saving === '1') { event.preventDefault(); return; }
       const chosen = purposeSelect.value;
       const target = grid.querySelector('[name="allocationTarget"]').value;
       const reserved = num(allocationInput.value);
@@ -690,11 +887,35 @@
         alert('Выберите обязательство для назначения денег.');
         return;
       }
-      const snapshot = deposit ? { movements: (deposit.movements || []).slice(), initial: deposit.initial, allocations: (deposit.allocations || []).slice(), closed: deposit.closed, closedAt: deposit.closedAt, closeInterest: deposit.closeInterest, payout: deposit.payout, destination: deposit.destination } : null;
+      let openingSource = '';
+      if (!id) {
+        const owner = String(form.elements.owner && form.elements.owner.value || '').trim();
+        const amount = moneyOk(form.elements.current && form.elements.current.value);
+        const fundingKind = fundingPanel.querySelector('[name="fundingKind"]:checked');
+        const kind = fundingKind && fundingKind.value === 'safe' ? 'safe' : 'account';
+        if (!owner) { event.preventDefault(); alert('Укажите владельца вклада.'); return; }
+        if (!(amount > 0)) { event.preventDefault(); alert('Укажите сумму вклада.'); return; }
+        openingSource = fundingSelect.value;
+        const source = fundingBalance(openingSource);
+        if (!source || source.kind !== kind || (kind === 'account' && !sameOwner(source.account.owner, owner)) || (kind === 'safe' && !ownerOwnsSafe(source.safe, owner))) {
+          event.preventDefault();
+          alert('Выберите, откуда берутся деньги на вклад.');
+          return;
+        }
+        if (source.available + 0.001 < amount) {
+          event.preventDefault();
+          alert(shortageMessage(source.kind, source.account, source.available));
+          return;
+        }
+        form.dataset.saving = '1';
+        const submitButton = form.querySelector('.primary-button');
+        if (submitButton) submitButton.disabled = true;
+      }
+      const snapshot = deposit ? { movements: (deposit.movements || []).slice(), initial: deposit.initial, allocations: (deposit.allocations || []).slice(), closed: deposit.closed, closedAt: deposit.closedAt, closeInterest: deposit.closeInterest, payout: deposit.payout, destination: deposit.destination, funding: deposit.funding } : null;
       const before = state.deposits.map(function (item) { return item.id; });
       previousSubmit.call(form, event);
       const saved = id ? state.deposits.find(function (item) { return item.id === id; }) : state.deposits.filter(function (item) { return before.indexOf(item.id) < 0; })[0];
-      if (!saved) return;
+      if (!saved) { form.dataset.saving = ''; const submitButton = form.querySelector('.primary-button'); if (submitButton) submitButton.disabled = false; return; }
       saved.movements = snapshot ? snapshot.movements : (saved.movements || []);
       if (snapshot && snapshot.initial != null && snapshot.initial !== '') saved.initial = snapshot.initial;
       else if (saved.initial == null || saved.initial === '') saved.initial = saved.current;
@@ -718,6 +939,19 @@
         saved.closeInterest = snapshot.closeInterest;
         saved.payout = snapshot.payout;
         saved.destination = snapshot.destination;
+      }
+      if (snapshot && snapshot.funding) saved.funding = snapshot.funding;
+      delete saved.fundingSource;
+      delete saved.fundingKind;
+      if (!id && openingSource) {
+        const funded = applyOpeningFunding(saved, openingSource, moneyOk(saved.current));
+        if (!funded) {
+          state.deposits = state.deposits.filter(function (item) { return item.id !== saved.id; });
+          alert('Недостаточно средств на выбранном источнике. Вклад не открыт.');
+          save();
+          render();
+          return;
+        }
       }
       save();
       render();
@@ -843,6 +1077,29 @@
     const panel = document.getElementById('account-details-' + id);
     if (panel) panel.hidden = false;
   };
+
+  function capitalFlowHistory() {
+    const rows = [];
+    (state.deposits || []).forEach(function (deposit) {
+      (deposit.movements || []).forEach(function (item) {
+        if (item.flow === 'open' || item.flow === 'close') rows.push(item);
+      });
+    });
+    rows.sort(function (a, b) { return String(b.date || '').localeCompare(String(a.date || '')); });
+    const html = rows.map(function (item) {
+      if (item.flow === 'open') {
+        return '<div class="stat-row"><span>' + dateText(item.date) + '<br><b>' + esc(item.title || 'Открытие вклада') + '</b><br>' + esc(item.route || item.text || '') + '<small>Внутреннее перемещение. Не расход и не доход.</small></span><strong>' + rub(item.amount) + '</strong></div>';
+      }
+      const interest = num(item.interest);
+      return '<div class="stat-row"><span>' + dateText(item.date) + '<br><b>' + esc(item.title || 'Закрытие вклада') + '</b><br>Тело вклада: ' + rub(item.principal) + '<br>Полученные проценты: ' + rub(interest) + '<br>Зачислено: ' + rub(item.payout) + ' · ' + esc(item.destinationLabel || '') + (interest > 0 ? '<br>Доход от капитала: +' + rub(interest) : '<br>Доход от капитала: 0 ₽') + '</span><strong>' + rub(item.payout) + '</strong></div>';
+    }).join('');
+    return '<div class="panel"><h3>Движение денег по вкладам</h3>' + (html || '<div class="empty">Новых перемещений между вкладами, картами и сейфом пока нет</div>') + '</div>';
+  }
+
+  if (typeof history === 'function') {
+    const baseHistory = history;
+    history = function () { return baseHistory() + capitalFlowHistory(); };
+  }
 
   if (typeof activeView !== 'undefined' && activeView === 'deposits') render();
 })();

@@ -554,9 +554,16 @@
     let depositExpected = 0;
     let rentExpected = 0;
     state.deposits.forEach(function (deposit) {
-      if (deposit.closed) return;
-      if (inCurrentMonth(deposit.nextDate)) depositReceived += num(deposit.received);
-      if (deposit.status !== 'Получено' && inCurrentMonth(deposit.nextDate)) depositExpected += num(deposit.expected);
+      const movements = deposit.movements || [];
+      movements.forEach(function (item) {
+        if (item.type === 'interest' && inCurrentMonth(item.date)) depositReceived += num(item.amount);
+      });
+      const recorded = movements.reduce(function (sum, item) {
+        return item.type === 'interest' ? sum + num(item.amount) : sum;
+      }, 0);
+      const legacy = Math.max(0, num(deposit.received) - recorded);
+      if (legacy > 0 && inCurrentMonth(deposit.nextDate)) depositReceived += legacy;
+      if (!deposit.closed && deposit.status !== 'Получено' && inCurrentMonth(deposit.nextDate)) depositExpected += num(deposit.expected);
     });
     state.assets.forEach(function (asset) {
       const rent = asset.rent || {};

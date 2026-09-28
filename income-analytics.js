@@ -88,7 +88,7 @@
       const gap = deposit.status === 'Получено' ? Math.max(0, num(deposit.received) - movementTotal) : 0;
       const onDate = movements.filter(function (item) { return item.date === deposit.nextDate; });
       const factHere = onDate.reduce(function (sum, item) { return sum + num(item.amount); }, 0) + gap;
-      if (monthKey(deposit.nextDate) && (num(deposit.expected) > 0 || factHere > 0)) {
+      if (!deposit.closed && monthKey(deposit.nextDate) && (num(deposit.expected) > 0 || factHere > 0)) {
         rows.push(entry({
           id: 'deposit-' + deposit.id + '-' + deposit.nextDate,
           source: 'deposit',
@@ -101,7 +101,7 @@
         }));
       }
       movements.forEach(function (item) {
-        if (item.date === deposit.nextDate) return;
+        if (!deposit.closed && item.date === deposit.nextDate) return;
         rows.push(entry({
           id: 'deposit-move-' + (item.id || deposit.id + '-' + item.date),
           source: 'deposit',
