@@ -36,12 +36,17 @@
   }
 
   async function openCabinet() {
+    var loaded = null;
     try {
-      if (typeof window.loadCabinetFromCloud === 'function') await window.loadCabinetFromCloud();
+      if (typeof window.loadCabinetFromCloud === 'function') loaded = await window.loadCabinetFromCloud();
     } catch (error) {
-      console.error('Чтение кабинета из Supabase не удалось. Показана локальная копия.', error);
+      console.error('Чтение кабинета из Supabase не удалось.', error);
     }
-    showCabinet();
+    if (loaded && loaded.source === 'supabase' && !loaded.error) {
+      showCabinet();
+      return;
+    }
+    showError('Не удалось загрузить кабинет из Supabase.');
   }
 
   async function leaveCabinet() {

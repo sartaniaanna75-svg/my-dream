@@ -1,5 +1,8 @@
 async function loadCabinetFromCloud() {
   window.cabinetCloudReady = false;
+  window.cabinetCloudBaseline = null;
+  var view = document.getElementById('app-view');
+  if (view) view.innerHTML = '';
   var storageKey = 'finance-cabinet-v1';
   var preserved = localStorage.getItem(storageKey);
 
